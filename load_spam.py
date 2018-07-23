@@ -25,13 +25,14 @@ def process_spam(n = None):
     np.random.seed(0)
 
     nlprocessor = NLProcessor()
-    spam = init_lists('data/spam/enron1/spam/')
-    ham = init_lists('data/spam/enron1/ham/')
+    spam = init_lists('data/spam/enron1/spam/')[:5]
+    ham = init_lists('data/spam/enron1/ham/')[:5]
 
     if n is None:
         docs, Y = nlprocessor.process_spam(spam, ham)
     else:
-        docs, Y = nlprocessor.process_spam(spam[:n], ham[:n])
+        docs, Y = nlprocessor.process_spam(spam, ham)
+        Y = np.delete(Y,n)
     num_examples = len(Y)
     #print(docs[:1])
 
