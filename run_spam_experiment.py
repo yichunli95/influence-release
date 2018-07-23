@@ -130,7 +130,10 @@ def dcaf(model, test_idx, orig_loss, method='influence'):
         print("The higher up on the ranking, the example which the leave-one-out approach tests upon has a more positive influence.")
         result = [None] * train_size
         for i in range(train_size):
+            start1 = time.time()
             curr_model = run_spam(i)
+            duration1 = time.time() - start1
+            print('The experiment #%s took %s seconds' %(i,duration1))
             result[i] = (i, orig_loss - curr_model[1][0])
         result = sorted(result,key=lambda x: x[1], reverse = False)
         for j in result:
