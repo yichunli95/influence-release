@@ -25,8 +25,8 @@ def process_spam(n = None):
     np.random.seed(0)
 
     nlprocessor = NLProcessor()
-    spam = init_lists('data/spam/enron1/spam/')[:5]
-    ham = init_lists('data/spam/enron1/ham/')[:5]
+    spam = init_lists('data/spam/enron1/spam/')
+    ham = init_lists('data/spam/enron1/ham/')
 
     if n is None:
         docs, Y = nlprocessor.process_spam(spam, ham)
