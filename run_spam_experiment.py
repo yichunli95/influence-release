@@ -84,7 +84,7 @@ def run_spam(ex_to_leave_out=None):
     return result
 
 
-def dcaf(model, test_idx, orig_loss, method='influence'):
+def dcaf(model, test_indices, orig_loss, method='influence'):
     # method can be 'influence' (the influence function approach[DEFAULT]), 'leave-one-out'(leave-one-out approach)
     # 'equal' (equal-assignment approach) or 'random' (equal-assignment approach)
     model.reset_datasets()
@@ -103,8 +103,8 @@ def dcaf(model, test_idx, orig_loss, method='influence'):
         indices_to_remove = np.arange(1)
         # List of tuple: (index of training example, predicted loss of training example)
         predicted_loss_diffs_per_training_point = [None] * train_size
-        # Sum up the predicted loss for every training example on all test examples
-        for idx in test_idx:
+        # Sum up the predicted loss for every training example on every test example
+        for idx in test_indices:
             curr_predicted_loss_diff = model.get_influence_on_test_loss([idx], indices_to_remove,force_refresh=True)
             for train_idx in range(train_size):
                 if predicted_loss_diffs_per_training_point[train_idx] is None:
@@ -113,7 +113,7 @@ def dcaf(model, test_idx, orig_loss, method='influence'):
                     predicted_loss_diffs_per_training_point[train_idx] = (train_idx, predicted_loss_diffs_per_training_point[train_idx][1] + curr_predicted_loss_diff[train_idx])
             
         for predicted_loss_sum_tuple in predicted_loss_diffs_per_training_point:
-            predicted_loss_sum_tuple = (predicted_loss_sum_tuple[0],predicted_loss_sum_tuple[1]/len(test_idx))
+            predicted_loss_sum_tuple = (predicted_loss_sum_tuple[0],predicted_loss_sum_tuple[1]/len(test_indices))
 
         helpful_points = sorted(predicted_loss_diffs_per_training_point,key=lambda x: x[1], reverse=True)
         top_k = train_size
@@ -127,19 +127,20 @@ def dcaf(model, test_idx, orig_loss, method='influence'):
 
     elif method == 'leave-one-out':
         print("The credit of each training example is ranked in the form of original loss - current loss.")
-        print("The higher up on the ranking, the example which the leave-one-out approach tests upon has a more positive influence.")
+        print("The higher up on the ranking, the example which the leave-one-out approach tests on has a more positive influence on the model.")
         result = [None] * train_size
         for i in range(train_size):
             start1 = time.time()
-            curr_model = run_spam(i)
+            curr_results = run_spam(i)[1]
             duration1 = time.time() - start1
+            print('The original LOSS is %s' % orig_loss)
+            print('The current LOSS is %s' % curr_results[0])
             print('The experiment #%s took %s seconds' %(i,duration1))
-            result[i] = (i, orig_loss - curr_model[1][0])
+            print('======================')
+            result[i] = (i, orig_loss - curr_results[0])
         result = sorted(result,key=lambda x: x[1], reverse = False)
         for j in result:
             print("#%s,class=%s,loss_diff = %.8f" %(j[0], model.data_sets.train.labels[j[0]],j[1]))
-
-
 
     elif method == 'equal':
         print("\\\\\\\\\\ The credits sum up to 1. //////////")
