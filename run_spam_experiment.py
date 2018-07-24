@@ -138,7 +138,7 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
             print('The experiment #%s took %s seconds' %(i,duration1))
             print('======================')
             result[i] = (i, orig_loss - curr_results[0])
-        result = sorted(result,key=lambda x: x[1], reverse = False)
+        result = sorted(result,key=lambda x: x[1], reverse = True)
         for j in result:
             print("#%s,class=%s,loss_diff = %.8f" %(j[0], model.data_sets.train.labels[j[0]],j[1]))
 
