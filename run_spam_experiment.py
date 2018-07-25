@@ -130,6 +130,8 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
                 i[1]))
 
         # write to csv
+        if not os.path.isdir('csv_output'):
+            os.mkdir('csv_output')
         with open('csv_output/influence.csv', 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
@@ -155,6 +157,8 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
             csvdata.append([j[0],model.data_sets.train.labels[j[0]],j[1],j[2]])
             print("#%s,class=%s,loss_diff = %.8f, accuracy = %.8f" %(j[0], model.data_sets.train.labels[j[0]],j[1],j[2]))
 
+        if not os.path.isdir('csv_output'):
+                os.mkdir('csv_output')
         with open('csv_output/leave_one_out.csv', 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
@@ -166,6 +170,8 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
             csvdata.append([i,model.data_sets.train.labels[i],1/train_size])
             print("#%s,class=%s,credit = %.8f%%" %(i, model.data_sets.train.labels[i],100/train_size))
 
+        if not os.path.isdir('csv_output'):
+            os.mkdir('csv_output')
         with open('csv_output/equal.csv', 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
@@ -183,6 +189,8 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
             csvdata.append([i[0],model.data_sets.train.labels[i[0]],i[1]])
             print("#%s,class=%s,credit = %.8f%%" %(i[0], model.data_sets.train.labels[i[0]],i[1]*100.00))
 
+        if not os.path.isdir('csv_output'):
+            os.mkdir('csv_output')
         with open('csv_output/random.csv', 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
