@@ -130,7 +130,7 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
                 i[1]))
 
         # write to csv
-        with open('influence_1000.csv', 'w', newline='') as f:
+        with open('csv_output/influence.csv', 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
 
@@ -155,7 +155,7 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
             csvdata.append([j[0],model.data_sets.train.labels[j[0]],j[1],j[2]])
             print("#%s,class=%s,loss_diff = %.8f, accuracy = %.8f" %(j[0], model.data_sets.train.labels[j[0]],j[1],j[2]))
 
-        with open('leave_one_out_1000.csv', 'w', newline='') as f:
+        with open('csv_output/leave_one_out.csv', 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
 
@@ -166,7 +166,7 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
             csvdata.append([i,model.data_sets.train.labels[i],1/train_size])
             print("#%s,class=%s,credit = %.8f%%" %(i, model.data_sets.train.labels[i],100/train_size))
 
-        with open('equal_1000.csv', 'w', newline='') as f:
+        with open('csv_output/equal.csv', 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
 
@@ -183,7 +183,7 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
             csvdata.append([i[0],model.data_sets.train.labels[i[0]],i[1]])
             print("#%s,class=%s,credit = %.8f%%" %(i[0], model.data_sets.train.labels[i[0]],i[1]*100.00))
 
-        with open('random_1000.csv', 'w', newline='') as f:
+        with open('csv_output/random.csv', 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
 
@@ -193,7 +193,7 @@ result = run_spam()
 model=result[0]
 orig_results = result[1]
 print('Orig loss: %.5f. Accuracy: %.3f' % (orig_results[0], orig_results[1]))
-dcaf(model, range(model.data_sets.test.num_examples),orig_loss = orig_results[0],method ='leave-one-out')
+dcaf(model, range(model.data_sets.test.num_examples),orig_loss = orig_results[0],method ='random')
 duration = (time.time() - start_time)/3600.0
 print('The DCAF ranking took %s hours' % duration)
 

@@ -25,8 +25,8 @@ def process_spam(n = None):
     np.random.seed(0)
 
     nlprocessor = NLProcessor()
-    spam = init_lists('data/spam/enron1/spam/')[:150]
-    ham = init_lists('data/spam/enron1/ham/')[:150]
+    spam = init_lists('data/spam/enron1/spam/')#[:150]
+    ham = init_lists('data/spam/enron1/ham/')#[:150]
     docs, Y = nlprocessor.process_spam(spam, ham)
 
     num_examples = len(Y)
@@ -60,7 +60,7 @@ def process_spam(n = None):
         number_of_elements_excluded = 1
     else:
         number_of_elements_excluded = 0
-    
+
 
     #print(len(docs_train))
     #print(len(Y_train))
@@ -71,7 +71,7 @@ def process_spam(n = None):
     assert(len(docs_test) == len(Y_test))
     assert(len(Y_train) + len(Y_valid) + len(Y_test) == num_examples - number_of_elements_excluded)
     #assert(len(docs_train) == len(docs) - number_of_elements_excluded - len(docs_test))
-    
+
     # Learn vocab (transform the documents into a dictionary of words appeared in the docs)
     #print('going to learn vocab')
     nlprocessor.learn_vocab(docs_train)
