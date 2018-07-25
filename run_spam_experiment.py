@@ -1,7 +1,7 @@
 from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
-from __future__ import unicode_literals  
+from __future__ import unicode_literals
 
 import os
 import math
@@ -20,12 +20,14 @@ from load_spam import load_spam
 
 import tensorflow as tf
 
+import csv
+
 np.random.seed(42)
 
 def run_spam(ex_to_leave_out=None):
     if ex_to_leave_out is not None:
         data_sets = load_spam(ex_to_leave_out)
-    else: 
+    else:
         data_sets = load_spam()
     # "Spam" and "Ham"
     num_classes = 2
@@ -34,7 +36,7 @@ def run_spam(ex_to_leave_out=None):
     weight_decay = 0.0001
     # weight_decay = 1000 / len(lr_data_sets.train.labels)
     batch_size = 100
-    initial_learning_rate = 0.001 
+    initial_learning_rate = 0.001
     keep_probs = None
     decay_epochs = [1000, 10000]
     max_lbfgs_iter = 1000
@@ -45,7 +47,7 @@ def run_spam(ex_to_leave_out=None):
         input_dim=input_dim,
         weight_decay=weight_decay,
         max_lbfgs_iter=max_lbfgs_iter,
-        num_classes=num_classes, 
+        num_classes=num_classes,
         batch_size=batch_size,
         data_sets=data_sets,
         initial_learning_rate=initial_learning_rate,
@@ -61,10 +63,10 @@ def run_spam(ex_to_leave_out=None):
     X_train = np.copy(tf_model.data_sets.train.x)
     Y_train = np.copy(tf_model.data_sets.train.labels)
     X_test = np.copy(tf_model.data_sets.test.x)
-    Y_test = np.copy(tf_model.data_sets.test.labels) 
+    Y_test = np.copy(tf_model.data_sets.test.labels)
 
 
-    num_train_examples = Y_train.shape[0] 
+    num_train_examples = Y_train.shape[0]
     num_flip_vals = 6
     num_check_vals = 6
     num_random_seeds = 40
@@ -77,7 +79,7 @@ def run_spam(ex_to_leave_out=None):
     #flipped_results = np.zeros((num_flip_vals, num_random_seeds, 3))
 
     orig_results = tf_model.sess.run(
-        [tf_model.loss_no_reg, tf_model.accuracy_op], 
+        [tf_model.loss_no_reg, tf_model.accuracy_op],
         feed_dict=tf_model.all_test_feed_dict)
     #print('Orig loss: %.5f. Accuracy: %.3f' % (orig_results[0], orig_results[1]))
     result = [tf_model,orig_results]
@@ -109,9 +111,9 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
             for train_idx in range(train_size):
                 if predicted_loss_diffs_per_training_point[train_idx] is None:
                     predicted_loss_diffs_per_training_point[train_idx] = (train_idx, curr_predicted_loss_diff[train_idx])
-                else: 
+                else:
                     predicted_loss_diffs_per_training_point[train_idx] = (train_idx, predicted_loss_diffs_per_training_point[train_idx][1] + curr_predicted_loss_diff[train_idx])
-            
+
         for predicted_loss_sum_tuple in predicted_loss_diffs_per_training_point:
             predicted_loss_sum_tuple = (predicted_loss_sum_tuple[0],predicted_loss_sum_tuple[1]/len(test_indices))
 
@@ -119,11 +121,20 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
         top_k = train_size
         print("If the predicted difference in loss is very positive,that means that the point helped it to be correct.")
         print("Top %s training points making the loss on the test point better:" % top_k)
+        csvdata = [["index","class","predicted_loss_diff"]]
         for i in helpful_points:
+            csvdata.append([i[0],model.data_sets.train.labels[i[0]],i[1]])
             print("#%s, class=%s, predicted_loss_diff=%.8f" % (
-                i[0], 
-                model.data_sets.train.labels[i[0]], 
+                i[0],
+                model.data_sets.train.labels[i[0]],
                 i[1]))
+
+        # write to csv
+        with open('influence_1000.csv', 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(csvdata)
+
+
 
     elif method == 'leave-one-out':
         print("The credit of each training example is ranked in the form of original loss - current loss.")
@@ -139,14 +150,26 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
             print('======================')
             result[i] = (i, orig_loss - curr_results[0])
         result = sorted(result,key=lambda x: x[1], reverse = True)
+        csvdata = [["index","class","loss_diff"]]
         for j in result:
+            csvdata.append([j[0],model.data_sets.train.labels[j[0]],j[1]])
             print("#%s,class=%s,loss_diff = %.8f" %(j[0], model.data_sets.train.labels[j[0]],j[1]))
 
+        with open('leave_one_out_1000.csv', 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(csvdata)
+
     elif method == 'equal':
+        csvdata = [["index","class","credit"]]
         print("\\\\\\\\\\ The credits sum up to 1. //////////")
         for i in range(train_size):
+            csvdata.append([i,model.data_sets.train.labels[i],1/train_size])
             print("#%s,class=%s,credit = %.8f%%" %(i, model.data_sets.train.labels[i],100/train_size))
-            
+
+        with open('equal_1000.csv', 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(csvdata)
+
     elif method == 'random':
         print("\\\\\\\\\\ The credits sum up to 1. //////////")
         result = [None] * train_size
@@ -155,8 +178,14 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
         for counter, value in enumerate(result):
             result[counter] = (counter, a[counter])
         result = sorted(result,key=lambda x: x[1], reverse = True)
+        csvdata = [["index","class","credit"]]
         for i in result:
+            csvdata.append([i[0],model.data_sets.train.labels[i[0]],i[1]])
             print("#%s,class=%s,credit = %.8f%%" %(i[0], model.data_sets.train.labels[i[0]],i[1]*100.00))
+
+        with open('random_1000.csv', 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(csvdata)
 
 # Rank top influential points
 start_time = time.time()
@@ -169,7 +198,7 @@ duration = (time.time() - start_time)/3600.0
 print('The DCAF ranking took %s hours' % duration)
 
 np.savez(
-    'output/spam_results', 
+    'output/spam_results',
     orig_results=orig_results,
     #flipped_results=flipped_results,
     #fixed_influence_loo_results=fixed_influence_loo_results,
