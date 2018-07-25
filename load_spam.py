@@ -25,15 +25,13 @@ def process_spam(n = None):
     np.random.seed(0)
 
     nlprocessor = NLProcessor()
-    spam = init_lists('data/spam/enron1/spam/')[:500]
-    ham = init_lists('data/spam/enron1/ham/')[:500]
+    spam = init_lists('data/spam/enron1/spam/')[:150]
+    ham = init_lists('data/spam/enron1/ham/')[:150]
+    docs, Y = nlprocessor.process_spam(spam, ham)
 
-    if n is None:
-        docs, Y = nlprocessor.process_spam(spam, ham)
-    else:
-        docs, Y = nlprocessor.process_spam(spam, ham)
-        Y = np.delete(Y,n)
     num_examples = len(Y)
+
+
     #print(docs[:1])
 
     # The number of documents used for training, validation and tests
@@ -42,6 +40,9 @@ def process_spam(n = None):
     num_train_examples = int(train_fraction * num_examples)
     num_valid_examples = int(valid_fraction * num_examples)
     num_test_examples = num_examples - num_train_examples - num_valid_examples
+    print("The number of training examples is %s" %num_train_examples)
+    print("The number of testing examples is %s" %num_test_examples)
+
 
     # Apply the numbers to the location in the list of documents
     docs_train = docs[:num_train_examples]
@@ -53,11 +54,24 @@ def process_spam(n = None):
     docs_test = docs[-num_test_examples:]
     Y_test = Y[-num_test_examples:]
 
+    if n is not None:
+        Y_train = np.delete(Y_train,n)
+        docs_train = np.delete(np.array(docs_train),n)
+        number_of_elements_excluded = 1
+    else:
+        number_of_elements_excluded = 0
+    
+
+    #print(len(docs_train))
+    #print(len(Y_train))
+    #print(len(docs_test))
+    #print(len(Y_test))
     assert(len(docs_train) == len(Y_train))
     assert(len(docs_valid) == len(Y_valid))
     assert(len(docs_test) == len(Y_test))
-    assert(len(Y_train) + len(Y_valid) + len(Y_test) == num_examples)
-
+    assert(len(Y_train) + len(Y_valid) + len(Y_test) == num_examples - number_of_elements_excluded)
+    #assert(len(docs_train) == len(docs) - number_of_elements_excluded - len(docs_test))
+    
     # Learn vocab (transform the documents into a dictionary of words appeared in the docs)
     #print('going to learn vocab')
     nlprocessor.learn_vocab(docs_train)
