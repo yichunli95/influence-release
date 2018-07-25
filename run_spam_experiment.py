@@ -103,7 +103,7 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
     print('============================')
     if method == 'influence':
         indices_to_remove = np.arange(1)
-        # List of tuple: (index of training example, predicted loss of training example)
+        # List of tuple: (index of training example, predicted loss of training example, average accuracy of training example)
         predicted_loss_diffs_per_training_point = [None] * train_size
         # Sum up the predicted loss for every training example on every test example
         for idx in test_indices:
@@ -124,7 +124,7 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
         csvdata = [["index","class","predicted_loss_diff"]]
         for i in helpful_points:
             csvdata.append([i[0],model.data_sets.train.labels[i[0]],i[1]])
-            print("#%s, class=%s, predicted_loss_diff=%.8f" % (
+            print("#%s, class=%s, predicted_loss_diff=%.8f, accuracy=%.8f" % (
                 i[0],
                 model.data_sets.train.labels[i[0]],
                 i[1]))
@@ -148,12 +148,12 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
             print('The current LOSS is %s' % curr_results[0])
             print('The experiment #%s took %s seconds' %(i,duration1))
             print('======================')
-            result[i] = (i, orig_loss - curr_results[0])
+            result[i] = (i, orig_loss - curr_results[0],curr_results[1])
         result = sorted(result,key=lambda x: x[1], reverse = True)
-        csvdata = [["index","class","loss_diff"]]
+        csvdata = [["index","class","loss_diff","accuracy"]]
         for j in result:
-            csvdata.append([j[0],model.data_sets.train.labels[j[0]],j[1]])
-            print("#%s,class=%s,loss_diff = %.8f" %(j[0], model.data_sets.train.labels[j[0]],j[1]))
+            csvdata.append([j[0],model.data_sets.train.labels[j[0]],j[1],j[2]])
+            print("#%s,class=%s,loss_diff = %.8f, accuracy = %.8f" %(j[0], model.data_sets.train.labels[j[0]],j[1],j[2]))
 
         with open('leave_one_out_1000.csv', 'w', newline='') as f:
             writer = csv.writer(f)
