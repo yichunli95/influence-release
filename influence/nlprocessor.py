@@ -1,15 +1,16 @@
-# from spacy.en import English
-# import spacy
+import spacy
+#from spacy.en import English
+
 from sklearn.feature_extraction.text import CountVectorizer
 import numpy as np
 
-import en_core_web_sm
+#import en_core_web_sm
 
 class NLProcessor(object):
     def __init__(self):
         # self.nlp = English()
-        self.nlp = en_core_web_sm.load()
-        # self.nlp = spacy.load('en_core_web_sm-1.2.0')
+        # self.nlp = en_core_web_sm.load()
+        self.nlp = spacy.load('en_core_web_sm')
         self.vectorizer = CountVectorizer(min_df=5)  
         self.word_vec_len = 300
         
@@ -24,18 +25,21 @@ class NLProcessor(object):
         """
         docs = []
         for raw_doc in spam + ham:
+            #print('raw_doc', raw_doc)
             doc = self.nlp(raw_doc)
+            # for token in doc[:5]:
+            #     print(token)
+            #     print(token.lemma_, token.is_alpha, token.is_oov, token.is_stop)
             docs.append(' '.join(
                 [token.lemma_ for token in doc if (token.is_alpha and not (token.is_oov or token.is_stop))]))
-
         Y = np.zeros(len(spam) + len(ham))        
         Y[:len(spam)] = 1
         Y[len(spam):] = 0
 
 
-        docs_Y = zip(docs, Y)
+        docs_Y = list(zip(docs, Y))
         np.random.shuffle(docs_Y)
-        docs, Y = zip(*docs_Y)
+        docs, Y = list(zip(*docs_Y))
 
         Y = np.array(Y)
 
