@@ -9,7 +9,9 @@ import numpy as np
 import pandas as pd
 import sklearn.linear_model as linear_model
 import time
+import argparse
 
+import yagmail
 import scipy
 import sklearn
 
@@ -101,6 +103,9 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
     print('The test dataset has %s examples' % test_size)
     print("The %s method is chosen." %method)
     print('============================')
+
+    if not os.path.isdir('csv_output'):
+        os.mkdir('csv_output')
     if method == 'influence':
         indices_to_remove = np.arange(1)
         # List of tuple: (index of training example, predicted loss of training example, average accuracy of training example)
@@ -129,14 +134,11 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
                 model.data_sets.train.labels[i[0]],
                 i[1]))
 
-        # write to csv
-        if not os.path.isdir('csv_output'):
-            os.mkdir('csv_output')
+        csv_filename = 'influence.csv'
+        
         with open('csv_output/influence.csv', 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
-
-
 
     elif method == 'leave-one-out':
         print("The credit of each training example is ranked in the form of original loss - current loss.")
@@ -157,11 +159,8 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
             csvdata.append([j[0],model.data_sets.train.labels[j[0]],j[1],j[2]])
             print("#%s,class=%s,loss_diff = %.8f, accuracy = %.8f" %(j[0], model.data_sets.train.labels[j[0]],j[1],j[2]))
 
-        if not os.path.isdir('csv_output'):
-                os.mkdir('csv_output')
-        with open('csv_output/leave_one_out.csv', 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerows(csvdata)
+        csv_filename = 'leave_one_out.csv'
+        
 
     elif method == 'equal':
         csvdata = [["index","class","credit"]]
@@ -170,11 +169,7 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
             csvdata.append([i,model.data_sets.train.labels[i],1/train_size])
             print("#%s,class=%s,credit = %.8f%%" %(i, model.data_sets.train.labels[i],100/train_size))
 
-        if not os.path.isdir('csv_output'):
-            os.mkdir('csv_output')
-        with open('csv_output/equal.csv', 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerows(csvdata)
+        csv_filename = 'equal.csv'
 
     elif method == 'random':
         print("\\\\\\\\\\ The credits sum up to 1. //////////")
@@ -189,27 +184,66 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
             csvdata.append([i[0],model.data_sets.train.labels[i[0]],i[1]])
             print("#%s,class=%s,credit = %.8f%%" %(i[0], model.data_sets.train.labels[i[0]],i[1]*100.00))
 
-        if not os.path.isdir('csv_output'):
-            os.mkdir('csv_output')
-        with open('csv_output/random.csv', 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerows(csvdata)
+        csv_filename = 'random.csv'
 
-# Rank top influential points
-start_time = time.time()
-result = run_spam()
-model=result[0]
-orig_results = result[1]
-print('Orig loss: %.5f. Accuracy: %.3f' % (orig_results[0], orig_results[1]))
-dcaf(model, range(model.data_sets.test.num_examples),orig_loss = orig_results[0],method ='random')
-duration = (time.time() - start_time)/3600.0
-print('The DCAF ranking took %s hours' % duration)
+    filepath = 'csv_output/{}'.format(csv_filename)
+    with open(filepath, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerows(csvdata)
+    return filepath
+    
 
-np.savez(
-    'output/spam_results',
-    orig_results=orig_results,
-    #flipped_results=flipped_results,
-    #fixed_influence_loo_results=fixed_influence_loo_results,
-    #fixed_loss_results=fixed_loss_results,
-    #fixed_random_results=fixed_random_results
-)
+def main(args):
+    """
+    runs the experiments
+    """
+    if not args.test:
+        yag = yagmail.SMTP(os.environ['MAILBOT_ADDRESS'], os.environ['MAILBOT_PASSWORD'])
+        start_contents = """
+            About to run run_spam experiments, with the following arguments: {}. 
+            Another email will sent upon a successful run.
+            """.format(
+                args
+            )
+        yag.send(args.email_recipient, 'run_spam_experiment.py', start_contents)
+    start_time = time.time()
+    result = run_spam()
+    model=result[0]
+    orig_results = result[1]
+    print('Orig loss: %.5f. Accuracy: %.3f' % (orig_results[0], orig_results[1]))
+    filepath = dcaf(model, range(model.data_sets.test.num_examples), orig_loss = orig_results[0], method=args.method)
+    duration = (time.time() - start_time)/3600.0
+    msg = 'Done running experiments for method {}. The DCAF function took {} hours'.format(args.method, duration)
+    print(msg)
+    contents = [msg, filepath]
+    yag.send(args.email_recipient, 'done with run_spam_experiment.py', contents)
+
+    # NMV 7/25: as far as I can see, this output/spam_results is not currently being used by us
+    # np.savez(
+    #     'output/spam_results',
+    #     orig_results=orig_results,
+    #     #flipped_results=flipped_results,
+    #     #fixed_influence_loo_results=fixed_influence_loo_results,
+    #     #fixed_loss_results=fixed_loss_results,
+    #     #fixed_random_results=fixed_random_results
+    # )
+
+def parse():
+    """
+    Parse CLI Args
+    """
+    parser = argparse.ArgumentParser(description='see docstring')
+    parser.add_argument(
+        '--method', help='What method to use for computing loss. defaults to random', default='random'
+    )
+    parser.add_argument(
+        '--test', help='When testing, pass this argument to suppress emails.'
+    )
+    parser.add_argument(
+        '--email_recipient', help='who gets testing emails',
+    )
+    args = parser.parse_args()
+    main(args)
+
+if __name__ == '__main__':
+    parse()
