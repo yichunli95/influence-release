@@ -26,9 +26,13 @@ import csv
 
 np.random.seed(42)
 
-def run_spam(ex_to_leave_out=None):
+def run_spam(ex_to_leave_out=None, num_examples=None):
+    """
+    If ex_to_leave_out is None, don't leave any out. Otherwise, leave out the example at the specified index.
+    If num_examples is None, use all the examples
+    """
     if ex_to_leave_out is not None:
-        data_sets = load_spam(ex_to_leave_out)
+        data_sets = load_spam(ex_to_leave_out=ex_to_leave_out, num_examples=num_examples)
     else:
         data_sets = load_spam()
     # "Spam" and "Ham"
@@ -216,7 +220,8 @@ def main(args):
     msg = 'Done running experiments for method {}. The DCAF function took {} hours'.format(args.method, duration)
     print(msg)
     contents = [msg, filepath]
-    yag.send(args.email_recipient, 'done with run_spam_experiment.py', contents)
+    if not args.test:
+        yag.send(args.email_recipient, 'done with run_spam_experiment.py', contents)
 
     # NMV 7/25: as far as I can see, this output/spam_results is not currently being used by us
     # np.savez(
@@ -237,7 +242,10 @@ def parse():
         '--method', help='What method to use for computing loss. defaults to random', default='random'
     )
     parser.add_argument(
-        '--test', help='When testing, pass this argument to suppress emails.'
+        '--test', action='store_true', help='When testing, pass this argument to suppress emails.'
+    )
+    parser.add_argument(
+        '--num_examples', type=int, help='How many examples to use? Set this smaller to run faster.'
     )
     parser.add_argument(
         '--email_recipient', help='who gets testing emails',

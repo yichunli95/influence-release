@@ -1,3 +1,11 @@
+# Fork details
+
+## Set-up with conda:
+conda create --name influence python=3.6 scipy keras numpy pandas spacy=1.8.2 h5py
+
+
+
+
 # Understanding Black-box Predictions via Influence Functions
 
 This code replicates the experiments from the following paper:

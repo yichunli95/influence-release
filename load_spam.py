@@ -20,17 +20,23 @@ def init_lists(folder):
     return a_list
 
 
-def process_spam(n = None):
-
+def process_spam(ex_to_leave_out=None, num_examples=None):
+    """
+    Process the spam/ham data
+    """
     np.random.seed(0)
 
     nlprocessor = NLProcessor()
-    spam = init_lists('data/spam/enron1/spam/')#[:150]
-    ham = init_lists('data/spam/enron1/ham/')#[:150]
+    spam = init_lists('data/spam/enron1/spam/')
+    ham = init_lists('data/spam/enron1/ham/')
+    if num_examples:
+        # take care of it if num_examples is too big
+        num_examples = min(num_examples, len(spam), len(ham))
+        spam = spam[num_examples]
+        ham = ham[num_examples]
+
     docs, Y = nlprocessor.process_spam(spam, ham)
-
     num_examples = len(Y)
-
 
     #print(docs[:1])
 
@@ -43,7 +49,6 @@ def process_spam(n = None):
     print("The number of training examples is %s" %num_train_examples)
     print("The number of testing examples is %s" %num_test_examples)
 
-
     # Apply the numbers to the location in the list of documents
     docs_train = docs[:num_train_examples]
     Y_train = Y[:num_train_examples]
@@ -54,28 +59,26 @@ def process_spam(n = None):
     docs_test = docs[-num_test_examples:]
     Y_test = Y[-num_test_examples:]
 
-    if n is not None:
-        Y_train = np.delete(Y_train,n)
-        docs_train = np.delete(np.array(docs_train),n)
+    if ex_to_leave_out is not None:
+        Y_train = np.delete(Y_train, ex_to_leave_out)
+        docs_train = np.delete(np.array(docs_train), ex_to_leave_out)
         number_of_elements_excluded = 1
     else:
         number_of_elements_excluded = 0
 
 
-    #print(len(docs_train))
-    #print(len(Y_train))
-    #print(len(docs_test))
-    #print(len(Y_test))
+    print('Based on provided data and CLI args, there are {} train examples and {} test examples'.format(
+        len(docs_train), len(docs_test)
+    ))
+
     assert(len(docs_train) == len(Y_train))
     assert(len(docs_valid) == len(Y_valid))
     assert(len(docs_test) == len(Y_test))
     assert(len(Y_train) + len(Y_valid) + len(Y_test) == num_examples - number_of_elements_excluded)
-    #assert(len(docs_train) == len(docs) - number_of_elements_excluded - len(docs_test))
 
     # Learn vocab (transform the documents into a dictionary of words appeared in the docs)
-    #print('going to learn vocab')
     nlprocessor.learn_vocab(docs_train)
-    # BoW matrices for each division of the docs, freqs of each word
+    # Bag of Words matrices for each division of the docs, freqs of each word
     X_train = nlprocessor.get_bag_of_words(docs_train)
     X_valid = nlprocessor.get_bag_of_words(docs_valid)
     X_test = nlprocessor.get_bag_of_words(docs_test)
@@ -83,9 +86,9 @@ def process_spam(n = None):
     return X_train, Y_train, X_valid, Y_valid, X_test, Y_test
 
 
-def load_spam(n = None):
+def load_spam(ex_to_leave_out=None, num_examples=None):
 
-    X_train, Y_train, X_valid, Y_valid, X_test, Y_test = process_spam(n)
+    X_train, Y_train, X_valid, Y_valid, X_test, Y_test = process_spam(ex_to_leave_out, num_examples)
 
     # Convert them to dense matrices
     X_train = X_train.toarray()
