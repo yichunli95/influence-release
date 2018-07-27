@@ -32,8 +32,8 @@ def process_spam(ex_to_leave_out=None, num_examples=None):
     if num_examples:
         # take care of it if num_examples is too big
         num_examples = min(num_examples, len(spam), len(ham))
-        spam = spam[num_examples]
-        ham = ham[num_examples]
+        spam = spam[:num_examples]
+        ham = ham[:num_examples]
 
     docs, Y = nlprocessor.process_spam(spam, ham)
     num_examples = len(Y)
