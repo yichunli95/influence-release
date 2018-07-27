@@ -31,10 +31,7 @@ def run_spam(ex_to_leave_out=None, num_examples=None):
     If ex_to_leave_out is None, don't leave any out. Otherwise, leave out the example at the specified index.
     If num_examples is None, use all the examples
     """
-    if ex_to_leave_out is not None:
-        data_sets = load_spam(ex_to_leave_out=ex_to_leave_out, num_examples=num_examples)
-    else:
-        data_sets = load_spam()
+    data_sets = load_spam(ex_to_leave_out=ex_to_leave_out, num_examples=num_examples)
     # "Spam" and "Ham"
     num_classes = 2
 
@@ -66,21 +63,22 @@ def run_spam(ex_to_leave_out=None, num_examples=None):
 
     tf_model.train()
 
-    X_train = np.copy(tf_model.data_sets.train.x)
-    Y_train = np.copy(tf_model.data_sets.train.labels)
-    X_test = np.copy(tf_model.data_sets.test.x)
-    Y_test = np.copy(tf_model.data_sets.test.labels)
+    # NMV 7/26: appears to be unused right now.
+    # X_train = np.copy(tf_model.data_sets.train.x)
+    # Y_train = np.copy(tf_model.data_sets.train.labels)
+    # X_test = np.copy(tf_model.data_sets.test.x)
+    # Y_test = np.copy(tf_model.data_sets.test.labels)
 
 
-    num_train_examples = Y_train.shape[0]
-    num_flip_vals = 6
-    num_check_vals = 6
-    num_random_seeds = 40
+    # num_train_examples = Y_train.shape[0]
+    # num_flip_vals = 6
+    # num_check_vals = 6
+    # num_random_seeds = 40
 
-    dims = (num_flip_vals, num_check_vals, num_random_seeds, 3)
-    fixed_influence_loo_results = np.zeros(dims)
-    fixed_loss_results = np.zeros(dims)
-    fixed_random_results = np.zeros(dims)
+    # dims = (num_flip_vals, num_check_vals, num_random_seeds, 3)
+    # fixed_influence_loo_results = np.zeros(dims)
+    # fixed_loss_results = np.zeros(dims)
+    # fixed_random_results = np.zeros(dims)
 
     #flipped_results = np.zeros((num_flip_vals, num_random_seeds, 3))
 
@@ -92,7 +90,7 @@ def run_spam(ex_to_leave_out=None, num_examples=None):
     return result
 
 
-def dcaf(model, test_indices, orig_loss, method='influence'):
+def dcaf(model, test_indices, orig_loss, method='influence', num_examples=None):
     # method can be 'influence' (the influence function approach[DEFAULT]), 'leave-one-out'(leave-one-out approach)
     # 'equal' (equal-assignment approach) or 'random' (equal-assignment approach)
     model.reset_datasets()
@@ -110,13 +108,16 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
 
     if not os.path.isdir('csv_output'):
         os.mkdir('csv_output')
+
     if method == 'influence':
         indices_to_remove = np.arange(1)
         # List of tuple: (index of training example, predicted loss of training example, average accuracy of training example)
         predicted_loss_diffs_per_training_point = [None] * train_size
         # Sum up the predicted loss for every training example on every test example
         for idx in test_indices:
-            curr_predicted_loss_diff = model.get_influence_on_test_loss([idx], indices_to_remove,force_refresh=True)
+            curr_predicted_loss_diff = model.get_influence_on_test_loss(
+                [idx], indices_to_remove,force_refresh=True
+            )
             for train_idx in range(train_size):
                 if predicted_loss_diffs_per_training_point[train_idx] is None:
                     predicted_loss_diffs_per_training_point[train_idx] = (train_idx, curr_predicted_loss_diff[train_idx])
@@ -133,16 +134,13 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
         csvdata = [["index","class","predicted_loss_diff"]]
         for i in helpful_points:
             csvdata.append([i[0],model.data_sets.train.labels[i[0]],i[1]])
+            # FLAG: error with this string print
             print("#%s, class=%s, predicted_loss_diff=%.8f, accuracy=%.8f" % (
                 i[0],
                 model.data_sets.train.labels[i[0]],
                 i[1]))
 
         csv_filename = 'influence.csv'
-        
-        with open('csv_output/influence.csv', 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerows(csvdata)
 
     elif method == 'leave-one-out':
         print("The credit of each training example is ranked in the form of original loss - current loss.")
@@ -150,7 +148,7 @@ def dcaf(model, test_indices, orig_loss, method='influence'):
         result = [None] * train_size
         for i in range(train_size):
             start1 = time.time()
-            curr_results = run_spam(i)[1]
+            curr_results = run_spam(i, num_examples=num_examples)[1]
             duration1 = time.time() - start1
             print('The original LOSS is %s' % orig_loss)
             print('The current LOSS is %s' % curr_results[0])
@@ -211,11 +209,13 @@ def main(args):
             )
         yag.send(args.email_recipient, 'run_spam_experiment.py', start_contents)
     start_time = time.time()
-    result = run_spam()
+    result = run_spam(num_examples=args.num_examples)
     model=result[0]
     orig_results = result[1]
     print('Orig loss: %.5f. Accuracy: %.3f' % (orig_results[0], orig_results[1]))
-    filepath = dcaf(model, range(model.data_sets.test.num_examples), orig_loss = orig_results[0], method=args.method)
+    filepath = dcaf(
+        model, range(model.data_sets.test.num_examples), orig_loss=orig_results[0], method=args.method, num_examples=args.num_examples
+    )
     duration = (time.time() - start_time)/3600.0
     msg = 'Done running experiments for method {}. The DCAF function took {} hours'.format(args.method, duration)
     print(msg)
