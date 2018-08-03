@@ -38,16 +38,12 @@ def process_spam(ex_to_leave_out=None, num_examples=None):
     docs, Y = nlprocessor.process_spam(spam, ham)
     num_examples = len(Y)
 
-    #print(docs[:1])
-
     # The number of documents used for training, validation and tests
     train_fraction = 0.8
     valid_fraction = 0.0
     num_train_examples = int(train_fraction * num_examples)
     num_valid_examples = int(valid_fraction * num_examples)
     num_test_examples = num_examples - num_train_examples - num_valid_examples
-    print("The number of training examples is %s" %num_train_examples)
-    print("The number of testing examples is %s" %num_test_examples)
 
     # Apply the numbers to the location in the list of documents
     docs_train = docs[:num_train_examples]

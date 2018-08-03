@@ -52,65 +52,6 @@ def test_mislabeled_detection_batch(
     return fixed_influence_loo_results, fixed_loss_results, fixed_random_results
 
 
-
-def dcaf(model, test_idx, method='influence'):
-    # method can be 'influence' (the influence function approach[DEFAULT]), 'leave-one-out'(leave-one-out approach)
-    # 'equal' (equal-assignment approach) or 'random' (equal-assignment approach)
-    model.reset_datasets()
-    # Implemented by Tensorflow
-    # Datasets = collections.namedtuple('Datasets', ['train', 'validation', 'test'])
-    print('============================')
-    print('The training dataset has %s examples' % model.data_sets.train.num_examples)
-    print('The validation dataset has %s examples' % model.data_sets.validation.num_examples)
-    print('The test dataset has %s examples' % model.data_sets.test.num_examples)
-    print('Using the %s approach' % method)
-    print('============================')
-    if method == 'influence':
-        num_to_remove = 1
-        indices_to_remove = np.arange(num_to_remove)
-        # List of tuple: (index of training example, predicted loss of training example)
-        predicted_loss_diffs_per_training_point = [None] * model.data_sets.train.num_examples
-        # Sum up the predicted loss for every training example on all test examples
-        for idx in test_idx:
-            curr_predicted_loss_diff = model.get_influence_on_test_loss([idx], indices_to_remove,force_refresh=True)
-            for train_idx in range(model.data_sets.train.num_examples):
-                if predicted_loss_diffs_per_training_point[train_idx] is None:
-                    predicted_loss_diffs_per_training_point[train_idx] = (train_idx, curr_predicted_loss_diff[train_idx])
-                else: 
-                    predicted_loss_diffs_per_training_point[train_idx] = (train_idx, predicted_loss_diffs_per_training_point[train_idx][1] + curr_predicted_loss_diff[train_idx])
-            
-        for predicted_loss_sum_tuple in predicted_loss_diffs_per_training_point:
-            predicted_loss_sum_tuple = (predicted_loss_sum_tuple[0],predicted_loss_sum_tuple[1]/len(test_idx))
-
-        helpful_points = sorted(predicted_loss_diffs_per_training_point,key=lambda x: x[1], reverse=True)
-        top_k = model.data_sets.train.num_examples
-        print("If the predicted difference in loss is very positive,that means that the point helped it to be correct.")
-        print("Top %s training points making the loss on the test point better:" % top_k)
-        for i in helpful_points:
-            print("#%s, class=%s, predicted_loss_diff=%.8f" % (
-                i[0], 
-                model.data_sets.train.labels[i[0]], 
-                i[1]))
-
-    elif method == 'leave-one-out':
-        print("Leave-one-out")
-    elif method == 'equal':
-        print("\\\\\\\\\\ The credits sum up to 1. //////////")
-        for i in range(model.data_sets.train.num_examples):
-            print("#%s,class=%s,credit = %.8f%%" %(i, model.data_sets.train.labels[i],100/model.data_sets.train.num_examples))
-            
-    elif method == 'random':
-        print("\\\\\\\\\\ The credits sum up to 1. //////////")
-        result = [None] * model.data_sets.train.num_examples
-        a = np.random.rand(model.data_sets.train.num_examples)
-        a /= np.sum(a)
-        for counter, value in enumerate(result):
-            result[counter] = (counter, a[counter])
-        result = sorted(result,key=lambda x: x[1], reverse = True)
-        for i in result:
-            print("#%s,class=%s,credit = %.8f%%" %(i[0], model.data_sets.train.labels[i[0]],i[1]*100.00))
-
-
 #def viz_top_influential_examples(model, test_idx):
 #     model.reset_datasets()
 #     # Implemented by Tensorflow

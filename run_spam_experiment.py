@@ -24,7 +24,7 @@ import tensorflow as tf
 
 import csv
 
-np.random.seed(42)
+np.random.seed(0)
 
 def run_spam(ex_to_leave_out=None, num_examples=None):
     """
@@ -197,7 +197,7 @@ def dcaf(model, test_indices, orig_loss, method='influence', num_examples=None):
 
 def main(args):
     """
-    runs the experiments
+    runs the experiments based on CLI args
     """
     if not args.test:
         yag = yagmail.SMTP(os.environ['MAILBOT_ADDRESS'], os.environ['MAILBOT_PASSWORD'])

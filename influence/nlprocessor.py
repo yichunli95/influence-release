@@ -4,6 +4,7 @@ import spacy
 from sklearn.feature_extraction.text import CountVectorizer
 import numpy as np
 
+# Note: below line is old version. Using newer spacy, it's easier to use spacy.load(...)
 #import en_core_web_sm
 
 class NLProcessor(object):
