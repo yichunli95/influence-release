@@ -9,6 +9,7 @@ import sklearn.linear_model as linear_model
 from sklearn.metrics import roc_auc_score, accuracy_score
 import time
 import argparse
+import random
 
 import yagmail
 import scipy
@@ -192,7 +193,7 @@ def run_one_scenario(task, ex_to_leave_out=None, num_examples=None):
     return result
 
 
-def dcaf(model, task, test_indices, orig_loss, method='influence', num_to_sample_from_train_data=None, num_examples=None):
+def dcaf(model, task, test_indices, orig_loss, method='influence', num_examples=None,num_to_sample_from_train_data=None):
     """
     args:
         model - a tensorflow model
@@ -202,6 +203,7 @@ def dcaf(model, task, test_indices, orig_loss, method='influence', num_to_sample
             method can be 'influence' (the influence function approach[DEFAULT]), 'leave-one-out'(leave-one-out approach)
             'equal' (equal-assignment approach) or 'random' (equal-assignment approach)
         num_examples - how many examples of each class to load. Set a small number to test quickly.
+        num_to_sample_from_train_data - how many of the train examples to test.
 
     returns:
         the filepath where output data was written as CSV
@@ -217,55 +219,61 @@ def dcaf(model, task, test_indices, orig_loss, method='influence', num_to_sample
     print("The %s method is chosen." % method)
     print('============================')
 
+    if num_to_sample_from_train_data is not -1:
+        random.seed(1)
+        train_sample_index_set = random.sample(range(train_size),num_to_sample_from_train_data)
+
     if not os.path.isdir('csv_output'):
         os.mkdir('csv_output')
 
     if method == 'influence':
-        indices_to_remove = np.arange(1)
         # List of tuple: (index of training example, predicted loss of training example, average accuracy of training example)
-        predicted_loss_diffs_per_training_point = [None] * train_size
+        predicted_loss_diffs_per_training_point = [None] * len(train_sample_index_set)
         # Sum up the predicted loss for every training example on every test example
-        for idx in test_indices:
-            curr_predicted_loss_diff = model.get_influence_on_test_loss(
-                [idx], indices_to_remove,force_refresh=True
-            )
-            for train_idx in range(train_size):
-                if predicted_loss_diffs_per_training_point[train_idx] is None:
-                    predicted_loss_diffs_per_training_point[train_idx] = (train_idx, curr_predicted_loss_diff[train_idx])
-                else:
-                    predicted_loss_diffs_per_training_point[train_idx] = (train_idx, predicted_loss_diffs_per_training_point[train_idx][1] + curr_predicted_loss_diff[train_idx])
+        # for idx in test_indices:
+        #     curr_predicted_loss_diff = model.get_influence_on_test_loss(
+        #         [idx], train_sample_index_set,force_refresh=True
+        #     )
+        #     for i in range(len(train_sample_index_set)):
+        #         if predicted_loss_diffs_per_training_point[i] is None:
+        #             predicted_loss_diffs_per_training_point[i] = (train_sample_index_set[i], curr_predicted_loss_diff[i])
+        #         else:
+        #             predicted_loss_diffs_per_training_point[i] = (train_sample_index_set[i], predicted_loss_diffs_per_training_point[i][1] + curr_predicted_loss_diff[i])
+        curr_predicted_loss_diff = model.get_influence_on_test_loss(
+            test_indices, train_sample_index_set,force_refresh=True
+        )
+        for i in range(len(train_sample_index_set)):
+            predicted_loss_diffs_per_training_point[i] = (train_sample_index_set[i], curr_predicted_loss_diff[i])
 
-        for predicted_loss_sum_tuple in predicted_loss_diffs_per_training_point:
-            predicted_loss_sum_tuple = (predicted_loss_sum_tuple[0],predicted_loss_sum_tuple[1]/len(test_indices))
-
+        # for predicted_loss_sum_tuple in predicted_loss_diffs_per_training_point:
+        #     predicted_loss_sum_tuple = (predicted_loss_sum_tuple[0],predicted_loss_sum_tuple[1]/len(test_indices))
         helpful_points = sorted(predicted_loss_diffs_per_training_point,key=lambda x: x[1], reverse=True)
         top_k = train_size
         print("If the predicted difference in loss is very positive,that means that the point helped it to be correct.")
-        print("Top %s training points making the loss on the test point better:" % top_k)
+        #print("Top %s training points making the loss on the test point better:" % top_k)
         csvdata = [["index","class","predicted_loss_diff"]]
-        for i in helpful_points:
+        for i in helpful_points:        
             csvdata.append([i[0],model.data_sets.train.labels[i[0]],i[1]])
             # FLAG: error with this string print
             print("#%s, class=%s, predicted_loss_diff=%.8f" % (
                 i[0],
                 model.data_sets.train.labels[i[0]],
                 i[1]))
-
         csv_filename = 'influence.csv'
 
     elif method == 'leave-one-out':
         print("The credit of each training example is ranked in the form of original loss - current loss.")
         print("The higher up on the ranking, the example which the leave-one-out approach tests on has a more positive influence on the model.")
-        result = [None] * train_size
-        for i in range(train_size):
+        result = [None] * len(train_sample_index_set)
+        for i in range(len(train_sample_index_set)):
             start1 = time.time()
-            curr_results = run_one_scenario(task=task, ex_to_leave_out=i, num_examples=num_examples)[1]
+            curr_results = run_one_scenario(task=task, ex_to_leave_out=train_sample_index_set[i], num_examples=num_examples)[1]
             duration1 = time.time() - start1
             print('The original LOSS is %s' % orig_loss)
             print('The current LOSS is %s' % curr_results[0])
-            print('The experiment #%s took %s seconds' %(i,duration1))
+            print('The experiment #%s took %s seconds' %(train_sample_index_set[i],duration1))
             print('======================')
-            result[i] = (i, orig_loss - curr_results[0],curr_results[1])
+            result[i] = (train_sample_index_set[i], orig_loss - curr_results[0],curr_results[1])
         result = sorted(result,key=lambda x: x[1], reverse = True)
         csvdata = [["index","class","loss_diff","accuracy"]]
         for j in result:
@@ -277,14 +285,14 @@ def dcaf(model, task, test_indices, orig_loss, method='influence', num_to_sample
 
     elif method == 'equal':
         csvdata = [["index","class","credit"]]
-        for i in range(train_size):
+        for i in range(train_sample_index_set):
             csvdata.append([i,model.data_sets.train.labels[i],1/train_size])
             print("#%s,class=%s,credit = %.8f%%" %(i, model.data_sets.train.labels[i],100/train_size))
 
         csv_filename = 'equal.csv'
 
     elif method == 'random':
-        result = [None] * train_size
+        result = [None] * len(train_sample_index_set)
         a = np.random.rand(train_size)
         a /= np.sum(a)
         for counter, value in enumerate(result):
