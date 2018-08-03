@@ -3,6 +3,8 @@ This module can run a variety of experiments that compare different Data Credit 
 """
 import os
 import math
+from collections import defaultdict
+
 import numpy as np
 import pandas as pd
 import sklearn.linear_model as linear_model
@@ -20,12 +22,15 @@ from influence.nlprocessor import NLProcessor
 from influence.binaryLogisticRegressionWithLBFGS import BinaryLogisticRegressionWithLBFGS
 from load_spam import load_spam
 from load_mnist import load_small_mnist, load_mnist
+from influence.all_CNN_c import All_CNN_C
+
 
 
 import tensorflow as tf
 import csv
 
-np.random.seed(0)
+SEED = 0
+np.random.seed(SEED)
 
 class Scenario():
     """
@@ -42,19 +47,23 @@ class Scenario():
         self.num_examples = num_examples
         self.datasets = self.load_data_sets()
         self.init_model()
+        self.name = "{}__missing_{}__trunc_to_{}__seed_{}".format(
+            task, ex_to_leave_out, num_examples, SEED
+        )
 
 
     def load_data_sets(self):
         if self.task == 'spam_enron':
             self.data_sets = load_spam(ex_to_leave_out=self.ex_to_leave_out, num_examples=self.num_examples)
         elif self.task == 'mnist':
-            pass
+            self.data_sets = load_small_mnist('data')
 
 
     def init_model(self):
         """
         Initialize a tf model based on task
         """
+        
         if self.task == 'spam_enron':
             num_classes = 2
             input_dim = self.data_sets.train.x.shape[1]
@@ -97,7 +106,7 @@ class Scenario():
             conv_patch_size = 3
             keep_probs = [1.0, 1.0]
 
-            model = All_CNN_C(
+            self.model = All_CNN_C(
                 input_side=input_side, 
                 input_channels=input_channels,
                 conv_patch_size=conv_patch_size,
@@ -107,7 +116,7 @@ class Scenario():
                 weight_decay=weight_decay,
                 num_classes=num_classes, 
                 batch_size=batch_size,
-                data_sets=data_sets,
+                data_sets=self.data_sets,
                 initial_learning_rate=initial_learning_rate,
                 damping=1e-2,
                 decay_epochs=decay_epochs,
@@ -172,28 +181,28 @@ def run_one_scenario(task, ex_to_leave_out=None, num_examples=None):
     Y_test = np.copy(tf_model.data_sets.test.labels)
     
     orig_results = tf_model.sess.run(
-        fetches=[tf_model.loss_no_reg, tf_model.accuracy_op, tf_model.preds, tf_model.logits],
+        fetches=[tf_model.loss_no_reg, tf_model.accuracy_op, tf_model.preds],
         feed_dict=tf_model.all_test_feed_dict
     )
     print('orig_results', orig_results)
     preds = orig_results[2]
-    logits = orig_results[3]
 
-    print('Y_test', Y_test[:5])
     sk_auc = roc_auc_score(y_true=Y_test, y_score=np.array(preds[:,1]))
-
-    print('preds', preds[:5])
     sk_acc = accuracy_score(y_true=Y_test, y_pred=[1 if x[1] >= 0.5 else 0 for x in preds])
 
     print('orig_results: (loss and tf accuracy)\n', orig_results[0], orig_results[1])
-    print('sk_acc', sk_acc)
     print('sk_auc', sk_auc)
     assert sk_acc == orig_results[1]
-    result = [tf_model, orig_results]
-    return result
+    return {
+        'tf_model': tf_model,
+        'loss_no_reg': orig_results[0],
+        'accuracy': sk_acc,
+        'auc': sk_auc,
+        'scenario_obj': scenario
+    }
 
 
-def dcaf(model, task, test_indices, orig_loss, method='influence', num_examples=None,num_to_sample_from_train_data=None):
+def dcaf(model, task, test_indices, orig_loss, methods, num_to_sample_from_train_data=None, num_examples=None):
     """
     args:
         model - a tensorflow model
@@ -216,7 +225,7 @@ def dcaf(model, task, test_indices, orig_loss, method='influence', num_examples=
     print('The training dataset has %s examples' % train_size)
     print('The validation dataset has %s examples' % valid_size)
     print('The test dataset has %s examples' % test_size)
-    print("The %s method is chosen." % method)
+    print("The %s methods are chosen." % methods)
     print('============================')
 
     if num_to_sample_from_train_data is not -1:
@@ -226,7 +235,9 @@ def dcaf(model, task, test_indices, orig_loss, method='influence', num_examples=
     if not os.path.isdir('csv_output'):
         os.mkdir('csv_output')
 
-    if method == 'influence':
+    test_to_train_to_method_to_loss = defaultdict(lambda: defaultdict(dict))
+    if 'influence' in methods or 'all' in methods:
+        indices_to_remove = np.arange(1)
         # List of tuple: (index of training example, predicted loss of training example, average accuracy of training example)
         predicted_loss_diffs_per_training_point = [None] * len(train_sample_index_set)
         # Sum up the predicted loss for every training example on every test example
@@ -261,19 +272,22 @@ def dcaf(model, task, test_indices, orig_loss, method='influence', num_examples=
                 i[1]))
         csv_filename = 'influence.csv'
 
-    elif method == 'leave-one-out':
+    elif 'leave-one-out' in methods or 'all' in methods:
         print("The credit of each training example is ranked in the form of original loss - current loss.")
         print("The higher up on the ranking, the example which the leave-one-out approach tests on has a more positive influence on the model.")
         result = [None] * len(train_sample_index_set)
         for i in range(len(train_sample_index_set)):
             start1 = time.time()
-            curr_results = run_one_scenario(task=task, ex_to_leave_out=train_sample_index_set[i], num_examples=num_examples)[1]
+            curr_results = run_one_scenario(task=task, ex_to_leave_out=i, num_examples=num_examples)
+            curr_scenario = curr_results['scenario_obj']
+            curr_loss = curr_results['loss_no_reg']
             duration1 = time.time() - start1
             print('The original LOSS is %s' % orig_loss)
-            print('The current LOSS is %s' % curr_results[0])
-            print('The experiment #%s took %s seconds' %(train_sample_index_set[i],duration1))
+            print('The current LOSS is %s' % curr_loss)
+            print('The experiment #%s took %s seconds' % (i, duration1))
             print('======================')
-            result[i] = (train_sample_index_set[i], orig_loss - curr_results[0],curr_results[1])
+            result[i] = (i, orig_loss - curr_loss, curr_results['accuracy'])
+        # sorts by LOO loss
         result = sorted(result,key=lambda x: x[1], reverse = True)
         csvdata = [["index","class","loss_diff","accuracy"]]
         for j in result:
@@ -329,13 +343,14 @@ def main(args):
     filepaths = []
     for task in args.tasks:
         result = run_one_scenario(task, num_examples=args.num_examples)
-        model = result[0]
-        orig_results = result[1]
-
-        print('Orig loss: %.5f. Accuracy: %.3f' % (orig_results[0], orig_results[1]))
+        model = result['model']
+        orig_loss = result['loss_no_reg']
+        orig_accuracy = result['orig_accuracy']
+        
+        print('Orig loss: %.5f. Accuracy: %.3f' % (orig_loss, orig_accuracy))
         filepath = dcaf(
-            model, task, range(model.data_sets.test.num_examples), orig_loss=orig_results[0],
-            method=args.method, num_to_sample_from_train_data=args.num_to_sample_from_train_data,
+            model, task, range(model.data_sets.test.num_examples), orig_loss=orig_loss,
+            method=args.methods, num_to_sample_from_train_data=args.num_to_sample_from_train_data,
             num_examples=args.num_examples
         )
         filepaths.append(filepath)
@@ -356,7 +371,7 @@ def parse():
     """
     parser = argparse.ArgumentParser(description='see docstring')
     parser.add_argument(
-        '--method', help='What method to use for computing loss. defaults to random', default='random'
+        '--methods', help='What methods to use for computing loss. defaults to all', default='all'
     )
     parser.add_argument(
         '--test', action='store_true', help='When testing, pass this argument to suppress emails.'
@@ -392,6 +407,11 @@ def parse():
         args.tasks = args.tasks.split(',')
     else:
         args.tasks = [args.tasks]
+
+    if ',' in args.methods:
+        args.methods = args.methods.split(',')
+    else:
+        args.methods = [args.methods]
     main(args)
 
 if __name__ == '__main__':
