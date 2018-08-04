@@ -75,69 +75,16 @@ class BinaryLogisticRegressionWithLBFGS(LogisticRegressionWithLBFGS):
         set_weights = tf.assign(self.weights, self.W_placeholder, validate_shape=True)
         return [set_weights]
 
-    # The model should remove all possible combinations of x number of pairings of examples 
-    # in the training data and calculate the predicted loss
-    # The "train_idx" argument represents the number of indices to remove
-    # FOR NOW, ASSUME ONLY REMOVE 1 EXAMPLE 
-    # def get_influence_on_test_loss(self, test_indices, train_idx, 
-    #     approx_type='cg', approx_params=None, force_refresh=True, test_description=None,
-    #     loss_type='normal_loss',
-    #     ignore_training_error=False,
-    #     ignore_hessian=False
-    #     ):
-
-    #     test_grad_loss_no_reg_val = self.get_test_grad_loss_no_reg_val(test_indices, loss_type=loss_type)
-
-    #     print('Norm of test gradient: %s' % np.linalg.norm(np.concatenate(test_grad_loss_no_reg_val)))
-
-    #     start_time = time.time()
-
-    #     if test_description is None:
-    #         test_description = test_indices
-
-    #     approx_filename = os.path.join(self.train_dir, '%s-%s-%s-test-%s.npz' % (self.model_name, approx_type, loss_type, test_description))
-    #     if ignore_hessian == False:
-    #         if os.path.exists(approx_filename) and force_refresh == False:
-    #             inverse_hvp = list(np.load(approx_filename)['inverse_hvp'])
-    #             print('Loaded inverse HVP from %s' % approx_filename)
-    #         else:
-    #             inverse_hvp = self.get_inverse_hvp(
-    #                 test_grad_loss_no_reg_val,
-    #                 approx_type,
-    #                 approx_params)
-    #             np.savez(approx_filename, inverse_hvp=inverse_hvp)
-    #             print('Saved inverse HVP to %s' % approx_filename)
-    #     else:
-    #         inverse_hvp = test_grad_loss_no_reg_val
-
-    #     duration = time.time() - start_time
-    #     print('Inverse HVP took %s sec' % duration)
-
-
-    #     start_time = time.time()
-    #     # N choose 1 for now
-    #     predicted_loss_diffs = np.zeros([self.data_sets.train.num_examples])
-    #     for idx_to_remove in range(self.data_sets.train.num_examples):
-    #         if ignore_training_error == False:
-    #             single_train_feed_dict = self.fill_feed_dict_with_one_ex(self.data_sets.train, idx_to_remove)
-    #             train_grad_loss_val = self.sess.run(self.grad_total_loss_op, feed_dict=single_train_feed_dict)
-    #         else:
-    #             train_grad_loss_val = [-(self.data_sets.train.labels[idx_to_remove] * 2 - 1) * self.data_sets.train.x[idx_to_remove, :]]
-    #         predicted_loss_diffs[idx_to_remove] = np.dot(np.concatenate(inverse_hvp), np.concatenate(train_grad_loss_val)) / self.num_train_examples
-
-    #     duration = time.time() - start_time
-    #     print('Multiplying by %s train examples took %s sec' % (self.data_sets.train.num_examples, duration))
-        
-    #     return predicted_loss_diffs
 
     # Special-purpose function for paper experiments
     # that has flags for ignoring training error or Hessian
-    def get_influence_on_test_loss(self, test_indices, train_idx, 
+    def get_influence_on_test_loss(
+        self, test_indices, train_indices, 
         approx_type='cg', approx_params=None, force_refresh=True, test_description=None,
         loss_type='normal_loss',
         ignore_training_error=False,
         ignore_hessian=False
-        ):
+    ):
 
         test_grad_loss_no_reg_val = self.get_test_grad_loss_no_reg_val(test_indices, loss_type=loss_type)
 
@@ -169,9 +116,9 @@ class BinaryLogisticRegressionWithLBFGS(LogisticRegressionWithLBFGS):
 
         start_time = time.time()
 
-        num_to_remove = len(train_idx)
+        num_to_remove = len(train_indices)
         predicted_loss_diffs = np.zeros([num_to_remove])
-        for counter, idx_to_remove in enumerate(train_idx):            
+        for counter, idx_to_remove in enumerate(train_indices):            
             
             if ignore_training_error == False:
                 single_train_feed_dict = self.fill_feed_dict_with_one_ex(self.data_sets.train, idx_to_remove)      
