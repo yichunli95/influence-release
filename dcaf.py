@@ -128,7 +128,7 @@ class Scenario():
 
 
 
-def run_one_scenario(task, ex_to_leave_out=None, num_examples=None):
+def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None):
     """
     args:
         ex_to_leave_out - integer
@@ -138,67 +138,61 @@ def run_one_scenario(task, ex_to_leave_out=None, num_examples=None):
             number of examples to use
     """
     tf.reset_default_graph()
-
     # regardless of the choice of tasks, we must do all of the following
     # 1. load the data set into a tensorflow data objects
     # 2. choose hyperparameters like learning_rate, iterations, etc
     # 3. initalize some tensorflow model with these hyperparams
-
     scenario = Scenario(task, ex_to_leave_out, num_examples)
 
-    # if task == 'spam_enron':
-        
-    #     data_sets = load_spam(ex_to_leave_out=ex_to_leave_out, num_examples=num_examples)
-    #     num_classes = 2
-    #     input_dim = data_sets.train.x.shape[1]
-    #     weight_decay = 0.0001
-    #     batch_size = 100
-    #     initial_learning_rate = 0.001
-    #     keep_probs = None
-    #     decay_epochs = [1000, 10000]
-    #     max_lbfgs_iter = 1000
-
-    #     tf_model = BinaryLogisticRegressionWithLBFGS(
-    #         input_dim=input_dim,
-    #         weight_decay=weight_decay,
-    #         max_lbfgs_iter=max_lbfgs_iter,
-    #         num_classes=num_classes,
-    #         batch_size=batch_size,
-    #         data_sets=data_sets,
-    #         initial_learning_rate=initial_learning_rate,
-    #         keep_probs=keep_probs,
-    #         decay_epochs=decay_epochs,
-    #         mini_batch=False,
-    #         train_dir='output',
-    #         log_dir='log',
-    #         model_name='spam_logreg')
     tf_model = scenario.model
     tf_model.train()
+
+    if test_indices is None:
+        test_indices = range(tf_model.data_sets.test.num_examples)
 
     # X_train = np.copy(tf_model.data_sets.train.x)
     # Y_train = np.copy(tf_model.data_sets.train.labels)
     # X_test = np.copy(tf_model.data_sets.test.x)
     Y_test = np.copy(tf_model.data_sets.test.labels)
+
+    test_to_metrics = defaultdict(dict)
+    all_one_preds = []
+    for test_idx in test_indices:
+        test_feed_dict = tf_model.fill_feed_dict_with_one_ex(
+            tf_model.data_sets.test,  
+            test_idx
+        )
+        loss, accuracy, preds = tf_model.sess.run(
+            fetches=[tf_model.loss_no_reg, tf_model.accuracy_op, tf_model.preds],
+            feed_dict=test_feed_dict
+        )
+        test_to_metrics[test_idx] = {
+            'loss': loss, 'accuracy': accuracy, 'preds': preds
+        }
+        all_one_preds.append(preds[:,1])
     
-    orig_results = tf_model.sess.run(
+    loss, accuracy, preds = tf_model.sess.run(
         fetches=[tf_model.loss_no_reg, tf_model.accuracy_op, tf_model.preds],
         feed_dict=tf_model.all_test_feed_dict
     )
-    print('orig_results', orig_results)
-    preds = orig_results[2]
 
     sk_auc = roc_auc_score(y_true=Y_test, y_score=np.array(preds[:,1]))
     sk_acc = accuracy_score(y_true=Y_test, y_pred=[1 if x[1] >= 0.5 else 0 for x in preds])
-
-    print('orig_results: (loss and tf accuracy)\n', orig_results[0], orig_results[1])
+    print('results: (loss and tf accuracy)\n', loss, accuracy)
     print('sk_auc', sk_auc)
-    assert sk_acc == orig_results[1]
+    assert sk_acc == accuracy
+    assert roc_auc_score(y_true=Y_test, y_score=all_one_preds) == sk_auc
+
+    mean_loss = np.mean([test_to_metrics[x]['loss'] for x in test_to_metrics.keys()])
+    print('mean loss, loss from all tests at once:', mean_loss, loss)
+    assert np.isclose(mean_loss, loss)
     return {
         'tf_model': tf_model,
-        'loss_no_reg': orig_results[0],
+        'loss_no_reg': loss,
         'accuracy': sk_acc,
         'auc': sk_auc,
-        'scenario_obj': scenario
+        'scenario_obj': scenario,
+        'test_to_metrics': test_to_metrics
     }
 
 
@@ -228,18 +222,18 @@ def dcaf(model, task, test_indices, orig_loss, methods, num_to_sample_from_train
     print("The %s methods are chosen." % methods)
     print('============================')
 
-    if num_to_sample_from_train_data is not -1:
+    if num_to_sample_from_train_data != -1:
         random.seed(1)
-        train_sample_index_set = random.sample(range(train_size),num_to_sample_from_train_data)
+        train_sample_indices = random.sample(range(train_size), num_to_sample_from_train_data)
 
     if not os.path.isdir('csv_output'):
         os.mkdir('csv_output')
 
-    test_to_train_to_method_to_loss = defaultdict(lambda: defaultdict(dict))
+    train_to_test_to_method_to_loss = defaultdict(lambda: defaultdict(dict))
     if 'influence' in methods or 'all' in methods:
-        indices_to_remove = np.arange(1)
+
         # List of tuple: (index of training example, predicted loss of training example, average accuracy of training example)
-        predicted_loss_diffs_per_training_point = [None] * len(train_sample_index_set)
+        predicted_loss_diffs_per_training_point = [None] * len(train_sample_indices)
         # Sum up the predicted loss for every training example on every test example
         # for idx in test_indices:
         #     curr_predicted_loss_diff = model.get_influence_on_test_loss(
@@ -251,34 +245,47 @@ def dcaf(model, task, test_indices, orig_loss, methods, num_to_sample_from_train
         #         else:
         #             predicted_loss_diffs_per_training_point[i] = (train_sample_index_set[i], predicted_loss_diffs_per_training_point[i][1] + curr_predicted_loss_diff[i])
         curr_predicted_loss_diff = model.get_influence_on_test_loss(
-            test_indices, train_sample_index_set,force_refresh=True
+            test_indices=test_indices, train_indices=train_sample_indices, force_refresh=True
         )
-        for i in range(len(train_sample_index_set)):
-            predicted_loss_diffs_per_training_point[i] = (train_sample_index_set[i], curr_predicted_loss_diff[i])
+        for i, train_idx in enumerate(train_sample_indices):
+            predicted_loss_diffs_per_training_point[i] = (train_idx, curr_predicted_loss_diff[i])
+            train_to_test_to_method_to_loss[train_idx]['all_at_once']['influence'] = curr_predicted_loss_diff[i]
+        
+        for test_idx in test_indices:
+            one_test_loss = model.get_influence_on_test_loss(
+                test_indices=[test_idx], train_indices=train_sample_indices, force_refresh=True
+            )
+            for i, train_idx in enumerate(train_sample_indices):
+                train_to_test_to_method_to_loss[train_idx][test_idx]['influence'] = one_test_loss[i]
 
-        # for predicted_loss_sum_tuple in predicted_loss_diffs_per_training_point:
-        #     predicted_loss_sum_tuple = (predicted_loss_sum_tuple[0],predicted_loss_sum_tuple[1]/len(test_indices))
+        train_to_avg_loss = {}
+        for train_idx, test_to_method_to_loss in train_to_test_to_method_to_loss.items():
+            losses = [x['influence'] for x in test_to_method_to_loss.values()]
+            train_to_avg_loss[train_idx] = np.mean(losses)
+        
+        print(predicted_loss_diffs_per_training_point)
+        print(train_to_avg_loss)
+
         helpful_points = sorted(predicted_loss_diffs_per_training_point,key=lambda x: x[1], reverse=True)
-        top_k = train_size
+
         print("If the predicted difference in loss is very positive,that means that the point helped it to be correct.")
-        #print("Top %s training points making the loss on the test point better:" % top_k)
         csvdata = [["index","class","predicted_loss_diff"]]
-        for i in helpful_points:        
-            csvdata.append([i[0],model.data_sets.train.labels[i[0]],i[1]])
-            # FLAG: error with this string print
-            print("#%s, class=%s, predicted_loss_diff=%.8f" % (
-                i[0],
-                model.data_sets.train.labels[i[0]],
-                i[1]))
+        for train_idx, loss in helpful_points:        
+            csvdata.append([train_idx, model.data_sets.train.labels[train_idx], loss])
+            print("#{}, label={}, predicted_loss_diff={}".format(
+                train_idx,
+                model.data_sets.train.labels[train_idx],
+                loss
+            ))
         csv_filename = 'influence.csv'
 
-    elif 'leave-one-out' in methods or 'all' in methods:
+    if 'leave-one-out' in methods or 'all' in methods:
         print("The credit of each training example is ranked in the form of original loss - current loss.")
         print("The higher up on the ranking, the example which the leave-one-out approach tests on has a more positive influence on the model.")
-        result = [None] * len(train_sample_index_set)
-        for i in range(len(train_sample_index_set)):
+        result = [None] * len(train_sample_indices)
+        for i in range(len(train_sample_indices)):
             start1 = time.time()
-            curr_results = run_one_scenario(task=task, ex_to_leave_out=i, num_examples=num_examples)
+            curr_results = run_one_scenario(task=task, test_indices=test_indices, ex_to_leave_out=i, num_examples=num_examples)
             curr_scenario = curr_results['scenario_obj']
             curr_loss = curr_results['loss_no_reg']
             duration1 = time.time() - start1
@@ -297,19 +304,19 @@ def dcaf(model, task, test_indices, orig_loss, methods, num_to_sample_from_train
         csv_filename = 'leave_one_out.csv'
         
 
-    elif method == 'equal':
+    if 'equal' in methods or 'all' in methods:
         csvdata = [["index","class","credit"]]
-        for i in range(train_sample_index_set):
+        for i in range(train_sample_indices):
             csvdata.append([i,model.data_sets.train.labels[i],1/train_size])
             print("#%s,class=%s,credit = %.8f%%" %(i, model.data_sets.train.labels[i],100/train_size))
 
         csv_filename = 'equal.csv'
 
-    elif method == 'random':
-        result = [None] * len(train_sample_index_set)
+    if 'random' in methods or 'all' in methods:
+        result = [None] * len(train_sample_indices)
         a = np.random.rand(train_size)
         a /= np.sum(a)
-        for counter, value in enumerate(result):
+        for counter, _ in enumerate(result):
             result[counter] = (counter, a[counter])
         result = sorted(result,key=lambda x: x[1], reverse = True)
         csvdata = [["index","class","credit"]]
@@ -341,21 +348,23 @@ def main(args):
     start_time = time.time()
 
     filepaths = []
+    
     for task in args.tasks:
-        result = run_one_scenario(task, num_examples=args.num_examples)
-        model = result['model']
+        result = run_one_scenario(task, test_indices=None, num_examples=args.num_examples)
+        model = result['tf_model']
         orig_loss = result['loss_no_reg']
-        orig_accuracy = result['orig_accuracy']
+        orig_accuracy = result['accuracy']
         
+        test_indices = range(model.data_sets.test.num_examples)
         print('Orig loss: %.5f. Accuracy: %.3f' % (orig_loss, orig_accuracy))
         filepath = dcaf(
-            model, task, range(model.data_sets.test.num_examples), orig_loss=orig_loss,
-            method=args.methods, num_to_sample_from_train_data=args.num_to_sample_from_train_data,
+            model, task, test_indices=test_indices, orig_loss=orig_loss,
+            methods=args.methods, num_to_sample_from_train_data=args.num_to_sample_from_train_data,
             num_examples=args.num_examples
         )
         filepaths.append(filepath)
     duration = round((time.time() - start_time) / 3600.0, 3)
-    msg = 'Done running experiments for method {}. The DCAF function took {} hours'.format(args.method, duration)
+    msg = 'Done running experiments for methods {}. The DCAF function took {} hours'.format(args.methods, duration)
     print(msg)
     contents = [msg] + filepaths
     if not args.test:
@@ -371,7 +380,7 @@ def parse():
     """
     parser = argparse.ArgumentParser(description='see docstring')
     parser.add_argument(
-        '--methods', help='What methods to use for computing loss. defaults to all', default='all'
+        '--methods', help='What methods to use for computing loss. defaults to all', default='influence,leave-one-out'
     )
     parser.add_argument(
         '--test', action='store_true', help='When testing, pass this argument to suppress emails.'
