@@ -157,6 +157,8 @@ def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None
     Y_test = np.copy(tf_model.data_sets.test.labels)
 
     test_to_metrics = {}
+
+    # confusing to readers
     all_one_preds = []
     for test_idx in test_indices:
         test_feed_dict = tf_model.fill_feed_dict_with_one_ex(
@@ -203,7 +205,7 @@ def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None
 
 def dcaf(
         model, task, test_indices, orig_loss, methods, num_to_sample_from_train_data=None,
-        num_examples=None, per_test=False,
+        num_examples=None, per_test=True,
     ):
     """
     args:
@@ -252,6 +254,7 @@ def dcaf(
             train_to_test_to_method_to_loss[train_idx]['all_at_once']['influence'] = curr_predicted_loss_diff[i]
         
         if per_test:
+            # could parallelize here?
             for test_idx in test_indices:
                 one_test_loss = model.get_influence_on_test_loss(
                     test_indices=[test_idx], train_indices=train_sample_indices, force_refresh=True
@@ -266,7 +269,7 @@ def dcaf(
         print(predicted_loss_diffs_per_training_point)
         print(train_to_method_to_avgloss)
 
-        #helpful_points = sorted(predicted_loss_diffs_per_training_point, key=lambda x: x[1], reverse=True)
+        predicted_loss_diffs_per_training_point = sorted(predicted_loss_diffs_per_training_point, key=lambda x: x[0], reverse=True)
         #print("If the predicted difference in loss is very positive,that means that the point helped it to be correct.")
         csvdata = [["index","class","predicted_loss_diff"]]
         for train_idx, loss in predicted_loss_diffs_per_training_point:        
@@ -305,7 +308,7 @@ def dcaf(
                 (train_index_to_leave_out, orig_loss - curr_loss, curr_results['accuracy'])
             )
             for test_idx, metrics in curr_results['test_to_metrics'].items():
-                train_to_test_to_method_to_loss[train_idx][test_idx]['leave-one-out'] =  metrics['loss'] - orig_loss
+                train_to_test_to_method_to_loss[train_index_to_leave_out][test_idx]['leave-one-out'] =  metrics['loss'] - orig_loss
         duration = time.time() - pre_out_time
         print('All experiments took {}'.format(duration))
 
@@ -325,7 +328,7 @@ def dcaf(
         #         train_to_test_to_method_to_loss[train_idx][test_idx]['leave-one-out'] =  metrics['loss'] - orig_loss
         
         # sorts by index
-        result = sorted(result, key=lambda x: x[0], reverse = True)
+        result = sorted(result, key=lambda x: x[0], reverse=True)
         csvdata = [["index","class","loss_diff","accuracy"]]
         for j in result:
             csvdata.append([j[0], model.data_sets.train.labels[j[0]], j[1], j[2]])
@@ -339,22 +342,31 @@ def dcaf(
             writer.writerows(csvdata)
 
         for train_idx, test_to_method_to_loss in train_to_test_to_method_to_loss.items():
-            print('train_idx', train_idx)
-            print(test_to_method_to_loss)
+            #print('train_idx', train_idx)
+            #print(test_to_method_to_loss)
             losses = [x['leave-one-out'] for x in test_to_method_to_loss.values() if 'leave-one-out' in x]
             train_to_method_to_avgloss[train_idx]['leave-one-out'] = np.mean(losses)
 
         # TODO: save train_to_method_to_avgloss to json or csv
 
+        errs = []
         for train_idx, method_to_avgloss in train_to_method_to_avgloss.items():
             print(train_idx)
+            err = method_to_avgloss['influence'] - method_to_avgloss['leave-one-out']
             print('Infl: {}. LOO: {}. Error: {}.'.format(
                 method_to_avgloss['influence'], method_to_avgloss['leave-one-out'],
-                method_to_avgloss['influence'] - method_to_avgloss['leave-one-out']
+                err
             ))
-        
+            errs.append(err)
+
+        print([x[0] for x in predicted_loss_diffs_per_training_point])
+        print([x[0] for x in result])
         print('Pearson R')
-        print(pearsonr([x[1] for x in predicted_loss_diffs_per_training_point], [x[1] for x in result]))
+        print(pearsonr([x[1] for x in result], [x[1] for x in predicted_loss_diffs_per_training_point]))
+
+        rmse_val = np.sqrt(np.mean([err ** 2 for err in errs]))
+        print('RMSE')
+        print(rmse_val)
         
 
     if 'equal' in methods or 'all' in methods:
@@ -375,7 +387,7 @@ def dcaf(
         a /= np.sum(a)
         for counter, _ in enumerate(result):
             result[counter] = (counter, a[counter])
-        result = sorted(result,key=lambda x: x[1], reverse = True)
+        result = sorted(result,key=lambda x: x[0], reverse = True)
         csvdata = [["index","class","credit"]]
         for i in result:
             csvdata.append([i[0],model.data_sets.train.labels[i[0]],i[1]])
