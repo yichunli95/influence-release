@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import sklearn.linear_model as linear_model
 from sklearn.metrics import roc_auc_score, accuracy_score
+from sklearn.metrics.pairwise import cosine_similarity
 from scipy.stats import pearsonr
 import time
 import argparse
@@ -64,7 +65,7 @@ class Scenario():
         """
         Initialize a tf model based on task
         """
-        
+
         if self.task == 'spam_enron':
             num_classes = 2
             input_dim = self.data_sets.train.x.shape[1]
@@ -95,11 +96,11 @@ class Scenario():
             num_classes = 10
             input_side = 28
             input_channels = 1
-            input_dim = input_side * input_side * input_channels 
+            input_dim = input_side * input_side * input_channels
             weight_decay = 0.001
             batch_size = 500
 
-            initial_learning_rate = 0.0001 
+            initial_learning_rate = 0.0001
             decay_epochs = [10000, 20000]
             hidden1_units = 8
             hidden2_units = 8
@@ -108,21 +109,21 @@ class Scenario():
             keep_probs = [1.0, 1.0]
 
             self.model = All_CNN_C(
-                input_side=input_side, 
+                input_side=input_side,
                 input_channels=input_channels,
                 conv_patch_size=conv_patch_size,
-                hidden1_units=hidden1_units, 
+                hidden1_units=hidden1_units,
                 hidden2_units=hidden2_units,
                 hidden3_units=hidden3_units,
                 weight_decay=weight_decay,
-                num_classes=num_classes, 
+                num_classes=num_classes,
                 batch_size=batch_size,
                 data_sets=self.data_sets,
                 initial_learning_rate=initial_learning_rate,
                 damping=1e-2,
                 decay_epochs=decay_epochs,
                 mini_batch=True,
-                train_dir='output', 
+                train_dir='output',
                 log_dir='log',
                 model_name='mnist_small_all_cnn_c'
             )
@@ -162,7 +163,7 @@ def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None
     all_one_preds = []
     for test_idx in test_indices:
         test_feed_dict = tf_model.fill_feed_dict_with_one_ex(
-            tf_model.data_sets.test,  
+            tf_model.data_sets.test,
             test_idx
         )
         loss, accuracy, preds = tf_model.sess.run(
@@ -173,7 +174,7 @@ def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None
             'loss': loss, 'accuracy': accuracy, 'preds': preds
         }
         all_one_preds.append(preds[:,1])
-    
+
     loss, accuracy, preds = tf_model.sess.run(
         fetches=[tf_model.loss_no_reg, tf_model.accuracy_op, tf_model.preds],
         feed_dict=tf_model.all_test_feed_dict
@@ -217,6 +218,7 @@ def dcaf(
             'equal' (equal-assignment approach) or 'random' (equal-assignment approach)
         num_examples - how many examples of each class to load. Set a small number to test quickly.
         num_to_sample_from_train_data - how many of the train examples to test.
+        per_test - if true, pass in one individual test example to predict at a time
 
     returns:
         the filepath where output data was written as CSV
@@ -232,7 +234,7 @@ def dcaf(
     print("The %s methods are chosen." % methods)
     print('============================')
 
-    if num_to_sample_from_train_data != -1:
+    if num_to_sample_from_train_data is not None:
         random.seed(1)
         train_sample_indices = random.sample(range(train_size), num_to_sample_from_train_data)
 
@@ -241,9 +243,10 @@ def dcaf(
 
     train_to_test_to_method_to_loss = defaultdict(lambda: defaultdict(dict))
     train_to_method_to_avgloss = defaultdict(dict)
-    if 'influence' in methods or 'all' in methods:
 
+    if 'influence' in methods or 'all' in methods:
         # List of tuple: (index of training example, predicted loss of training example, average accuracy of training example)
+        start_time = time.time()
         predicted_loss_diffs_per_training_point = [None] * len(train_sample_indices)
 
         curr_predicted_loss_diff = model.get_influence_on_test_loss(
@@ -252,7 +255,7 @@ def dcaf(
         for i, train_idx in enumerate(train_sample_indices):
             predicted_loss_diffs_per_training_point[i] = (train_idx, curr_predicted_loss_diff[i])
             train_to_test_to_method_to_loss[train_idx]['all_at_once']['influence'] = curr_predicted_loss_diff[i]
-        
+
         if per_test:
             # could parallelize here?
             # doesn't work: _pickle.PicklingError: Could not pickle the task to send it to the workers.
@@ -290,27 +293,33 @@ def dcaf(
         print('rmse of all_at_once_errors')
         print(np.sqrt(np.mean([err ** 2 for err in all_at_once_errors])))
 
+        influence_duration = time.time() - start_time
+
+
         predicted_loss_diffs_per_training_point = sorted(predicted_loss_diffs_per_training_point, key=lambda x: x[0], reverse=True)
         #print("If the predicted difference in loss is very positive,that means that the point helped it to be correct.")
         csvdata = [["index","class","predicted_loss_diff"]]
-        for train_idx, loss in predicted_loss_diffs_per_training_point:        
+        for train_idx, loss in predicted_loss_diffs_per_training_point:
             csvdata.append([train_idx, model.data_sets.train.labels[train_idx], loss])
             print("#{}, label={}, predicted_loss_diff={}".format(
                 train_idx,
                 model.data_sets.train.labels[train_idx],
                 loss
             ))
-        csv_filename = 'influence.csv'
+        csv_filename = 'influence_' + str(num_to_sample_from_train_data) + '.csv'
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
 
+        if num_to_sample_from_train_data is not None:
+            estimated_total_time = influence_duration/num_to_sample_from_train_data * train_size
+            print("The estimated total time to run the entire dataset using influence method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time/3600))
+
     if 'leave-one-out' in methods or 'all' in methods:
         print("The credit of each training example is ranked in the form of original loss - current loss.")
         print("The higher up on the ranking, the example which the leave-one-out approach tests on has a more positive influence on the model.")
-
-        pre_out_time = time.time()
+        start_time = time.time()
         out = Parallel(n_jobs=-1)(
             delayed(run_one_scenario)(
                 task=task, test_indices=test_indices, ex_to_leave_out=train_idx, num_examples=num_examples
@@ -330,8 +339,8 @@ def dcaf(
             )
             for test_idx, metrics in curr_results['test_to_metrics'].items():
                 train_to_test_to_method_to_loss[train_index_to_leave_out][test_idx]['leave-one-out'] =  metrics['loss'] - orig_loss
-        duration = time.time() - pre_out_time
-        print('All experiments took {}'.format(duration))
+        loo_duration = time.time() - start_time
+        print('All experiments took {}'.format(loo_duration))
 
 
         # for i, train_idx in enumerate(train_sample_indices):
@@ -347,7 +356,7 @@ def dcaf(
         #     result[i] = (train_idx, orig_loss - curr_loss, curr_results['accuracy'])
         #     for test_idx, metrics in curr_results['test_to_metrics'].items():
         #         train_to_test_to_method_to_loss[train_idx][test_idx]['leave-one-out'] =  metrics['loss'] - orig_loss
-        
+
         # sorts by index
         result = sorted(result, key=lambda x: x[0], reverse=True)
         csvdata = [["index","class","loss_diff","accuracy"]]
@@ -355,7 +364,7 @@ def dcaf(
             csvdata.append([j[0], model.data_sets.train.labels[j[0]], j[1], j[2]])
             print("#%s,class=%s,loss_diff = %.8f, accuracy = %.8f" %(j[0], model.data_sets.train.labels[j[0]],j[1],j[2]))
 
-        csv_filename = 'leave_one_out.csv'
+        csv_filename = 'leave_one_out_' + str(num_to_sample_from_train_data) + '.csv'
 
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
@@ -388,24 +397,69 @@ def dcaf(
         rmse_val = np.sqrt(np.mean([err ** 2 for err in errs]))
         print('RMSE')
         print(rmse_val)
+<<<<<<< HEAD
 
         print('Average all_at_once_error for influence function')
         print(np.mean(all_at_once_errors))
         
+=======
+        if num_to_sample_from_train_data is not None:
+            estimated_total_time = loo_duration/num_to_sample_from_train_data * train_size
+            print("The estimated total time to run the entire dataset using leave-one-out method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time/3600))
 
-    if 'equal' in methods or 'all' in methods:
-        csvdata = [["index","class","credit"]]
-        for i in range(train_sample_indices):
-            csvdata.append([i,model.data_sets.train.labels[i],1/train_size])
-            print("#%s,class=%s,credit = %.8f%%" %(i, model.data_sets.train.labels[i],100/train_size))
+    if 'cosine_similarity' in methods or 'all' in methods:
+        start_time = time.time()
+        train_sample_array = []
+        for train_idx in train_sample_indices:
+            # if model.data_sets.train.labels[train_idx] == 1:
+            train_sample_array.append(model.data_sets.train.x[train_idx])
 
-        csv_filename = 'equal.csv'
+        # test_sample_array = []
+        # for counter,example in enumerate(model.data_sets.test.x):
+        #     if model.data_sets.test.labels[counter] == 1:
+        #         test_sample_array.append(example)
+        #
+        # similarities = cosine_similarity(train_sample_array, test_sample_array)
+        similarities = cosine_similarity(train_sample_array, model.data_sets.test.x)
+        mean_similarities = np.mean(similarities, axis=1)
+
+        cos_duration = time.time() - start_time
+
+        csvdata = [["index","class","cosine_similarity"]]
+        for i in range(len(train_sample_indices)):
+            csvdata.append([train_sample_indices[i],model.data_sets.train.labels[train_sample_indices[i]],mean_similarities[i]])
+            print("#{},class={},avg_cosine_similarity={}".format(train_sample_indices[i],model.data_sets.train.labels[train_sample_indices[i]],mean_similarities[i]))
+
+        csv_filename = 'cosine_similarity_' + str(num_to_sample_from_train_data) + '.csv'
+
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
 
+        if num_to_sample_from_train_data is not None:
+            estimated_total_time = cos_duration/num_to_sample_from_train_data * train_size
+            print("The estimated total time to run the entire dataset using cosine similarity method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time/3600))
+>>>>>>> fccb773f5554cdd54bbe68f348ae0bca2a6e3978
+
+    if 'equal' in methods or 'all' in methods:
+        start_time = time.time()
+        csvdata = [["index","class","credit"]]
+        for i in range(len(train_sample_indices)):
+            csvdata.append([train_sample_indices[i],model.data_sets.train.labels[train_sample_indices[i]],1/train_size])
+            print("#%s,class=%s,credit = %.8f%%" %(i, model.data_sets.train.labels[train_sample_indices[i]],100/train_size))
+        eq_duration = time.time() - start_time
+        csv_filename = 'equal_' + str(num_to_sample_from_train_data) + '.csv'
+        filepath = 'csv_output/{}'.format(csv_filename)
+        with open(filepath, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(csvdata)
+        if num_to_sample_from_train_data is not None:
+            estimated_total_time = eq_duration/num_to_sample_from_train_data * train_size
+            print("The estimated total time to run the entire dataset using equal method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time/3600))
+
     if 'random' in methods or 'all' in methods:
+        start_time = time.time()
         result = [None] * len(train_sample_indices)
         a = np.random.rand(train_size)
         a /= np.sum(a)
@@ -416,23 +470,28 @@ def dcaf(
         for i in result:
             csvdata.append([i[0],model.data_sets.train.labels[i[0]],i[1]])
             print("#%s,class=%s,credit = %.8f%%" %(i[0], model.data_sets.train.labels[i[0]],i[1]*100.00))
+        rand_duration = time.time() - start_time
 
-        csv_filename = 'random.csv'
+        csv_filename = 'random_' + str(num_to_sample_from_train_data) + '.csv'
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
 
-    
+        if num_to_sample_from_train_data is not None:
+            estimated_total_time = rand_duration/num_to_sample_from_train_data * train_size
+            print("The estimated total time to run the entire dataset using random method is {} seconds, which is {} hours.".format(estimated_total_time, estimated_total_time/3600))
+
+
     return filepath
-    
+
 
 def main(args):
     """
     runs the experiments based on CLI args
     """
     start_contents = """
-        About to run experiments, with the following arguments: {}. 
+        About to run experiments, with the following arguments: {}.
         """.format(
             args
         )
@@ -442,13 +501,13 @@ def main(args):
     start_time = time.time()
 
     filepaths = []
-    
+
     for task in args.tasks:
         result = run_one_scenario(task, test_indices=None, num_examples=args.num_examples, return_model=True)
         model = result['tf_model']
         orig_loss = result['loss_no_reg']
         orig_accuracy = result['accuracy']
-        
+
         test_indices = range(model.data_sets.test.num_examples)
         print('Orig loss: %.5f. Accuracy: %.3f' % (orig_loss, orig_accuracy))
         filepath = dcaf(
@@ -501,7 +560,7 @@ def parse():
         """
     )
     parser.add_argument(
-        '--num_to_sample_from_train_data', type=int, default=-1,
+        '--num_to_sample_from_train_data', type=int,
         help='Running data credit for every test example could take a LONG Time. Just do it on a sample'
     )
 
