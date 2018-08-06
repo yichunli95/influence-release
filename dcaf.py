@@ -397,12 +397,10 @@ def dcaf(
         rmse_val = np.sqrt(np.mean([err ** 2 for err in errs]))
         print('RMSE')
         print(rmse_val)
-<<<<<<< HEAD
 
         print('Average all_at_once_error for influence function')
         print(np.mean(all_at_once_errors))
         
-=======
         if num_to_sample_from_train_data is not None:
             estimated_total_time = loo_duration/num_to_sample_from_train_data * train_size
             print("The estimated total time to run the entire dataset using leave-one-out method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time/3600))
@@ -440,7 +438,6 @@ def dcaf(
         if num_to_sample_from_train_data is not None:
             estimated_total_time = cos_duration/num_to_sample_from_train_data * train_size
             print("The estimated total time to run the entire dataset using cosine similarity method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time/3600))
->>>>>>> fccb773f5554cdd54bbe68f348ae0bca2a6e3978
 
     if 'equal' in methods or 'all' in methods:
         start_time = time.time()
