@@ -255,6 +255,18 @@ def dcaf(
         
         if per_test:
             # could parallelize here?
+            # doesn't work: _pickle.PicklingError: Could not pickle the task to send it to the workers.
+            # def helper(test_idx, train_sample_indices_indices):
+            #     return model.get_influence_on_test_loss(test_indices=[test_idx], train_indices=train_sample_indices, force_refresh=True), test_idx
+
+            # for one_test_loss, test_idx in Parallel(n_jobs=-1, verbose=5)(
+            #     delayed(helper)(
+            #         test_idx, train_sample_indices
+            #     ) for test_idx in test_indices
+            # ):
+            #     for i, train_idx in enumerate(train_sample_indices):
+            #         train_to_test_to_method_to_loss[train_idx][test_idx]['influence'] = one_test_loss[i]
+
             for test_idx in test_indices:
                 one_test_loss = model.get_influence_on_test_loss(
                     test_indices=[test_idx], train_indices=train_sample_indices, force_refresh=True
@@ -266,8 +278,17 @@ def dcaf(
             losses = [x['influence'] for x in test_to_method_to_loss.values()]
             train_to_method_to_avgloss[train_idx]['influence'] = np.mean(losses)
         
-        print(predicted_loss_diffs_per_training_point)
-        print(train_to_method_to_avgloss)
+        # TODO: quantify error
+
+        all_at_once_errors = []
+        for train_idx, loss in predicted_loss_diffs_per_training_point:
+            per_test_loss = train_to_method_to_avgloss[train_idx]['influence']
+            all_at_once_error = loss - per_test_loss
+            all_at_once_errors.append(all_at_once_error)
+            print('loss, per_test_loss', loss, per_test_loss)
+            print('train_idx, all_at_once_error:', train_idx, all_at_once_error)
+        print('rmse of all_at_once_errors')
+        print(np.sqrt(np.mean([err ** 2 for err in all_at_once_errors])))
 
         predicted_loss_diffs_per_training_point = sorted(predicted_loss_diffs_per_training_point, key=lambda x: x[0], reverse=True)
         #print("If the predicted difference in loss is very positive,that means that the point helped it to be correct.")
@@ -305,16 +326,16 @@ def dcaf(
             print('The current LOSS is %s' % curr_loss)
             print('======================')
             result.append(
-                (train_index_to_leave_out, orig_loss - curr_loss, curr_results['accuracy'])
+                (train_index_to_leave_out, curr_loss - orig_loss, curr_results['accuracy'])
             )
             for test_idx, metrics in curr_results['test_to_metrics'].items():
                 train_to_test_to_method_to_loss[train_index_to_leave_out][test_idx]['leave-one-out'] =  metrics['loss'] - orig_loss
         duration = time.time() - pre_out_time
         print('All experiments took {}'.format(duration))
 
+
         # for i, train_idx in enumerate(train_sample_indices):
         #     start1 = time.time()
-        #     # TODO: parallelize this
         #     curr_results = run_one_scenario(task=task, test_indices=test_indices, ex_to_leave_out=i, num_examples=num_examples)
         #     curr_scenario = curr_results['scenario_obj']
         #     curr_loss = curr_results['loss_no_reg']
@@ -367,6 +388,9 @@ def dcaf(
         rmse_val = np.sqrt(np.mean([err ** 2 for err in errs]))
         print('RMSE')
         print(rmse_val)
+
+        print('Average all_at_once_error for influence function')
+        print(np.mean(all_at_once_errors))
         
 
     if 'equal' in methods or 'all' in methods:
