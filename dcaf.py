@@ -217,6 +217,7 @@ def dcaf(
             'equal' (equal-assignment approach) or 'random' (equal-assignment approach)
         num_examples - how many examples of each class to load. Set a small number to test quickly.
         num_to_sample_from_train_data - how many of the train examples to test.
+        per_test - if true, pass in one individual test example to predict at a time
 
     returns:
         the filepath where output data was written as CSV
@@ -241,9 +242,10 @@ def dcaf(
 
     train_to_test_to_method_to_loss = defaultdict(lambda: defaultdict(dict))
     train_to_method_to_avgloss = defaultdict(dict)
-    if 'influence' in methods or 'all' in methods:
 
+    if 'influence' in methods or 'all' in methods:
         # List of tuple: (index of training example, predicted loss of training example, average accuracy of training example)
+        start_time = time.time()
         predicted_loss_diffs_per_training_point = [None] * len(train_sample_indices)
 
         curr_predicted_loss_diff = model.get_influence_on_test_loss(
@@ -266,6 +268,8 @@ def dcaf(
             losses = [x['influence'] for x in test_to_method_to_loss.values()]
             train_to_method_to_avgloss[train_idx]['influence'] = np.mean(losses)
         
+        influence_duration = time.time() - start_time
+        
         print(predicted_loss_diffs_per_training_point)
         print(train_to_method_to_avgloss)
 
@@ -284,12 +288,15 @@ def dcaf(
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
+        
+        if num_to_sample_from_train_data is not None:
+            estimated_total_time = influence_duration/num_to_sample_from_train_data * train_size
+            print("The estimated total time to run the entire dataset using influence method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time/3600))
 
     if 'leave-one-out' in methods or 'all' in methods:
         print("The credit of each training example is ranked in the form of original loss - current loss.")
         print("The higher up on the ranking, the example which the leave-one-out approach tests on has a more positive influence on the model.")
-
-        pre_out_time = time.time()
+        start_time = time.time()
         out = Parallel(n_jobs=-1)(
             delayed(run_one_scenario)(
                 task=task, test_indices=test_indices, ex_to_leave_out=train_idx, num_examples=num_examples
@@ -309,8 +316,8 @@ def dcaf(
             )
             for test_idx, metrics in curr_results['test_to_metrics'].items():
                 train_to_test_to_method_to_loss[train_index_to_leave_out][test_idx]['leave-one-out'] =  metrics['loss'] - orig_loss
-        duration = time.time() - pre_out_time
-        print('All experiments took {}'.format(duration))
+        loo_duration = time.time() - start_time
+        print('All experiments took {}'.format(loo_duration))
 
         # for i, train_idx in enumerate(train_sample_indices):
         #     start1 = time.time()
@@ -367,21 +374,32 @@ def dcaf(
         rmse_val = np.sqrt(np.mean([err ** 2 for err in errs]))
         print('RMSE')
         print(rmse_val)
+        if num_to_sample_from_train_data is not None:
+            estimated_total_time = loo_duration/num_to_sample_from_train_data * train_size
+            print("The estimated total time to run the entire dataset using leave-one-out method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time/3600))
+
         
 
     if 'equal' in methods or 'all' in methods:
+        start_time = time.time()
         csvdata = [["index","class","credit"]]
         for i in range(train_sample_indices):
             csvdata.append([i,model.data_sets.train.labels[i],1/train_size])
             print("#%s,class=%s,credit = %.8f%%" %(i, model.data_sets.train.labels[i],100/train_size))
-
+        eq_duration = time.time() - start_time
         csv_filename = 'equal.csv'
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
+        if num_to_sample_from_train_data is not None:
+            estimated_total_time = eq_duration/num_to_sample_from_train_data * train_size
+            print("The estimated total time to run the entire dataset using equal method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time/3600))
+        
+        
 
     if 'random' in methods or 'all' in methods:
+        start_time = time.time()
         result = [None] * len(train_sample_indices)
         a = np.random.rand(train_size)
         a /= np.sum(a)
@@ -392,6 +410,7 @@ def dcaf(
         for i in result:
             csvdata.append([i[0],model.data_sets.train.labels[i[0]],i[1]])
             print("#%s,class=%s,credit = %.8f%%" %(i[0], model.data_sets.train.labels[i[0]],i[1]*100.00))
+        rand_duration = time.time() - start_time
 
         csv_filename = 'random.csv'
         filepath = 'csv_output/{}'.format(csv_filename)
@@ -399,6 +418,10 @@ def dcaf(
             writer = csv.writer(f)
             writer.writerows(csvdata)
 
+        if num_to_sample_from_train_data is not None:
+            estimated_total_time = rand_duration/num_to_sample_from_train_data * train_size
+            print("The estimated total time to run the entire dataset using random method is {} seconds, which is {} hours.".format(estimated_total_time, estimated_total_time/3600))
+        
     
     return filepath
     
