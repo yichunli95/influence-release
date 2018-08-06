@@ -5,17 +5,18 @@ import os
 import math
 from collections import defaultdict
 
+
 import numpy as np
 import pandas as pd
 import sklearn.linear_model as linear_model
 from sklearn.metrics import roc_auc_score, accuracy_score
+from scipy.stats import pearsonr
 import time
 import argparse
 import random
 
 import yagmail
-import scipy
-import sklearn
+from joblib import Parallel, delayed
 
 import influence.experiments as experiments
 from influence.nlprocessor import NLProcessor
@@ -128,7 +129,7 @@ class Scenario():
 
 
 
-def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None):
+def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None, return_model=False):
     """
     args:
         ex_to_leave_out - integer
@@ -155,7 +156,7 @@ def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None
     # X_test = np.copy(tf_model.data_sets.test.x)
     Y_test = np.copy(tf_model.data_sets.test.labels)
 
-    test_to_metrics = defaultdict(dict)
+    test_to_metrics = {}
     all_one_preds = []
     for test_idx in test_indices:
         test_feed_dict = tf_model.fill_feed_dict_with_one_ex(
@@ -184,19 +185,26 @@ def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None
     assert roc_auc_score(y_true=Y_test, y_score=all_one_preds) == sk_auc
 
     mean_loss = np.mean([test_to_metrics[x]['loss'] for x in test_to_metrics.keys()])
-    print('mean loss, loss from all tests at once:', mean_loss, loss)
     assert np.isclose(mean_loss, loss)
-    return {
-        'tf_model': tf_model,
+    ret = {
+        #'tf_model': tf_model,
         'loss_no_reg': loss,
         'accuracy': sk_acc,
         'auc': sk_auc,
-        'scenario_obj': scenario,
-        'test_to_metrics': test_to_metrics
+        #'scenario_obj': scenario,
+        'test_to_metrics': test_to_metrics,
+        'ex_to_leave_out': ex_to_leave_out
     }
+    # can't pickle tf model
+    if return_model:
+        ret['tf_model'] = tf_model
+    return ret
 
 
-def dcaf(model, task, test_indices, orig_loss, methods, num_to_sample_from_train_data=None, num_examples=None):
+def dcaf(
+        model, task, test_indices, orig_loss, methods, num_to_sample_from_train_data=None,
+        num_examples=None, per_test=False,
+    ):
     """
     args:
         model - a tensorflow model
@@ -230,20 +238,12 @@ def dcaf(model, task, test_indices, orig_loss, methods, num_to_sample_from_train
         os.mkdir('csv_output')
 
     train_to_test_to_method_to_loss = defaultdict(lambda: defaultdict(dict))
+    train_to_method_to_avgloss = defaultdict(dict)
     if 'influence' in methods or 'all' in methods:
 
         # List of tuple: (index of training example, predicted loss of training example, average accuracy of training example)
         predicted_loss_diffs_per_training_point = [None] * len(train_sample_indices)
-        # Sum up the predicted loss for every training example on every test example
-        # for idx in test_indices:
-        #     curr_predicted_loss_diff = model.get_influence_on_test_loss(
-        #         [idx], train_sample_index_set,force_refresh=True
-        #     )
-        #     for i in range(len(train_sample_index_set)):
-        #         if predicted_loss_diffs_per_training_point[i] is None:
-        #             predicted_loss_diffs_per_training_point[i] = (train_sample_index_set[i], curr_predicted_loss_diff[i])
-        #         else:
-        #             predicted_loss_diffs_per_training_point[i] = (train_sample_index_set[i], predicted_loss_diffs_per_training_point[i][1] + curr_predicted_loss_diff[i])
+
         curr_predicted_loss_diff = model.get_influence_on_test_loss(
             test_indices=test_indices, train_indices=train_sample_indices, force_refresh=True
         )
@@ -251,26 +251,25 @@ def dcaf(model, task, test_indices, orig_loss, methods, num_to_sample_from_train
             predicted_loss_diffs_per_training_point[i] = (train_idx, curr_predicted_loss_diff[i])
             train_to_test_to_method_to_loss[train_idx]['all_at_once']['influence'] = curr_predicted_loss_diff[i]
         
-        for test_idx in test_indices:
-            one_test_loss = model.get_influence_on_test_loss(
-                test_indices=[test_idx], train_indices=train_sample_indices, force_refresh=True
-            )
-            for i, train_idx in enumerate(train_sample_indices):
-                train_to_test_to_method_to_loss[train_idx][test_idx]['influence'] = one_test_loss[i]
+        if per_test:
+            for test_idx in test_indices:
+                one_test_loss = model.get_influence_on_test_loss(
+                    test_indices=[test_idx], train_indices=train_sample_indices, force_refresh=True
+                )
+                for i, train_idx in enumerate(train_sample_indices):
+                    train_to_test_to_method_to_loss[train_idx][test_idx]['influence'] = one_test_loss[i]
 
-        train_to_avg_loss = {}
         for train_idx, test_to_method_to_loss in train_to_test_to_method_to_loss.items():
             losses = [x['influence'] for x in test_to_method_to_loss.values()]
-            train_to_avg_loss[train_idx] = np.mean(losses)
+            train_to_method_to_avgloss[train_idx]['influence'] = np.mean(losses)
         
         print(predicted_loss_diffs_per_training_point)
-        print(train_to_avg_loss)
+        print(train_to_method_to_avgloss)
 
-        helpful_points = sorted(predicted_loss_diffs_per_training_point,key=lambda x: x[1], reverse=True)
-
-        print("If the predicted difference in loss is very positive,that means that the point helped it to be correct.")
+        #helpful_points = sorted(predicted_loss_diffs_per_training_point, key=lambda x: x[1], reverse=True)
+        #print("If the predicted difference in loss is very positive,that means that the point helped it to be correct.")
         csvdata = [["index","class","predicted_loss_diff"]]
-        for train_idx, loss in helpful_points:        
+        for train_idx, loss in predicted_loss_diffs_per_training_point:        
             csvdata.append([train_idx, model.data_sets.train.labels[train_idx], loss])
             print("#{}, label={}, predicted_loss_diff={}".format(
                 train_idx,
@@ -278,30 +277,84 @@ def dcaf(model, task, test_indices, orig_loss, methods, num_to_sample_from_train
                 loss
             ))
         csv_filename = 'influence.csv'
+        filepath = 'csv_output/{}'.format(csv_filename)
+        with open(filepath, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(csvdata)
 
     if 'leave-one-out' in methods or 'all' in methods:
         print("The credit of each training example is ranked in the form of original loss - current loss.")
         print("The higher up on the ranking, the example which the leave-one-out approach tests on has a more positive influence on the model.")
-        result = [None] * len(train_sample_indices)
-        for i in range(len(train_sample_indices)):
-            start1 = time.time()
-            curr_results = run_one_scenario(task=task, test_indices=test_indices, ex_to_leave_out=i, num_examples=num_examples)
-            curr_scenario = curr_results['scenario_obj']
+
+        pre_out_time = time.time()
+        out = Parallel(n_jobs=-1)(
+            delayed(run_one_scenario)(
+                task=task, test_indices=test_indices, ex_to_leave_out=train_idx, num_examples=num_examples
+            ) for train_idx in train_sample_indices
+        )
+        result = []
+
+        for curr_results in out:
+            # curr_scenario = curr_results['scenario_obj']
             curr_loss = curr_results['loss_no_reg']
-            duration1 = time.time() - start1
+            train_index_to_leave_out = curr_results['ex_to_leave_out']
             print('The original LOSS is %s' % orig_loss)
             print('The current LOSS is %s' % curr_loss)
-            print('The experiment #%s took %s seconds' % (i, duration1))
             print('======================')
-            result[i] = (i, orig_loss - curr_loss, curr_results['accuracy'])
-        # sorts by LOO loss
-        result = sorted(result,key=lambda x: x[1], reverse = True)
+            result.append(
+                (train_index_to_leave_out, orig_loss - curr_loss, curr_results['accuracy'])
+            )
+            for test_idx, metrics in curr_results['test_to_metrics'].items():
+                train_to_test_to_method_to_loss[train_idx][test_idx]['leave-one-out'] =  metrics['loss'] - orig_loss
+        duration = time.time() - pre_out_time
+        print('All experiments took {}'.format(duration))
+
+        # for i, train_idx in enumerate(train_sample_indices):
+        #     start1 = time.time()
+        #     # TODO: parallelize this
+        #     curr_results = run_one_scenario(task=task, test_indices=test_indices, ex_to_leave_out=i, num_examples=num_examples)
+        #     curr_scenario = curr_results['scenario_obj']
+        #     curr_loss = curr_results['loss_no_reg']
+        #     duration1 = time.time() - start1
+        #     print('The original LOSS is %s' % orig_loss)
+        #     print('The current LOSS is %s' % curr_loss)
+        #     print('The experiment #%s took %s seconds' % (i, duration1))
+        #     print('======================')
+        #     result[i] = (train_idx, orig_loss - curr_loss, curr_results['accuracy'])
+        #     for test_idx, metrics in curr_results['test_to_metrics'].items():
+        #         train_to_test_to_method_to_loss[train_idx][test_idx]['leave-one-out'] =  metrics['loss'] - orig_loss
+        
+        # sorts by index
+        result = sorted(result, key=lambda x: x[0], reverse = True)
         csvdata = [["index","class","loss_diff","accuracy"]]
         for j in result:
-            csvdata.append([j[0],model.data_sets.train.labels[j[0]],j[1],j[2]])
+            csvdata.append([j[0], model.data_sets.train.labels[j[0]], j[1], j[2]])
             print("#%s,class=%s,loss_diff = %.8f, accuracy = %.8f" %(j[0], model.data_sets.train.labels[j[0]],j[1],j[2]))
 
         csv_filename = 'leave_one_out.csv'
+
+        filepath = 'csv_output/{}'.format(csv_filename)
+        with open(filepath, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(csvdata)
+
+        for train_idx, test_to_method_to_loss in train_to_test_to_method_to_loss.items():
+            print('train_idx', train_idx)
+            print(test_to_method_to_loss)
+            losses = [x['leave-one-out'] for x in test_to_method_to_loss.values() if 'leave-one-out' in x]
+            train_to_method_to_avgloss[train_idx]['leave-one-out'] = np.mean(losses)
+
+        # TODO: save train_to_method_to_avgloss to json or csv
+
+        for train_idx, method_to_avgloss in train_to_method_to_avgloss.items():
+            print(train_idx)
+            print('Infl: {}. LOO: {}. Error: {}.'.format(
+                method_to_avgloss['influence'], method_to_avgloss['leave-one-out'],
+                method_to_avgloss['influence'] - method_to_avgloss['leave-one-out']
+            ))
+        
+        print('Pearson R')
+        print(pearsonr([x[1] for x in predicted_loss_diffs_per_training_point], [x[1] for x in result]))
         
 
     if 'equal' in methods or 'all' in methods:
@@ -311,6 +364,10 @@ def dcaf(model, task, test_indices, orig_loss, methods, num_to_sample_from_train
             print("#%s,class=%s,credit = %.8f%%" %(i, model.data_sets.train.labels[i],100/train_size))
 
         csv_filename = 'equal.csv'
+        filepath = 'csv_output/{}'.format(csv_filename)
+        with open(filepath, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(csvdata)
 
     if 'random' in methods or 'all' in methods:
         result = [None] * len(train_sample_indices)
@@ -325,11 +382,12 @@ def dcaf(model, task, test_indices, orig_loss, methods, num_to_sample_from_train
             print("#%s,class=%s,credit = %.8f%%" %(i[0], model.data_sets.train.labels[i[0]],i[1]*100.00))
 
         csv_filename = 'random.csv'
+        filepath = 'csv_output/{}'.format(csv_filename)
+        with open(filepath, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(csvdata)
 
-    filepath = 'csv_output/{}'.format(csv_filename)
-    with open(filepath, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerows(csvdata)
+    
     return filepath
     
 
@@ -350,7 +408,7 @@ def main(args):
     filepaths = []
     
     for task in args.tasks:
-        result = run_one_scenario(task, test_indices=None, num_examples=args.num_examples)
+        result = run_one_scenario(task, test_indices=None, num_examples=args.num_examples, return_model=True)
         model = result['tf_model']
         orig_loss = result['loss_no_reg']
         orig_accuracy = result['accuracy']
