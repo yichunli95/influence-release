@@ -88,6 +88,9 @@ class BinaryLogisticRegressionWithLBFGS(LogisticRegressionWithLBFGS):
 
         test_grad_loss_no_reg_val = self.get_test_grad_loss_no_reg_val(test_indices, loss_type=loss_type)
 
+        print('**')
+        print(test_indices)
+        print(test_grad_loss_no_reg_val)
         print('Norm of test gradient: %s' % np.linalg.norm(np.concatenate(test_grad_loss_no_reg_val)))
 
         start_time = time.time()
@@ -109,10 +112,10 @@ class BinaryLogisticRegressionWithLBFGS(LogisticRegressionWithLBFGS):
                 print('Saved inverse HVP to %s' % approx_filename)
         else:
             inverse_hvp = test_grad_loss_no_reg_val
+        print('inverse_hvp', inverse_hvp)
 
         duration = time.time() - start_time
         print('Inverse HVP took %s sec' % duration)
-
 
         start_time = time.time()
 
@@ -123,6 +126,7 @@ class BinaryLogisticRegressionWithLBFGS(LogisticRegressionWithLBFGS):
             if ignore_training_error == False:
                 single_train_feed_dict = self.fill_feed_dict_with_one_ex(self.data_sets.train, idx_to_remove)      
                 train_grad_loss_val = self.sess.run(self.grad_total_loss_op, feed_dict=single_train_feed_dict)
+                print('train_grad_loss_val', train_grad_loss_val)
             else:
                 train_grad_loss_val = [-(self.data_sets.train.labels[idx_to_remove] * 2 - 1) * self.data_sets.train.x[idx_to_remove, :]]
             predicted_loss_diffs[counter] = np.dot(np.concatenate(inverse_hvp), np.concatenate(train_grad_loss_val)) / self.num_train_examples

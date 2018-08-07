@@ -464,7 +464,8 @@ class GenericNeuralNet(object):
         return feed_dict
 
 
-    def get_inverse_hvp(self, v, approx_type='cg', approx_params=None, verbose=True):
+    def get_inverse_hvp(self, v, approx_type='cg', approx_params=None, verbose=False):
+        # defaulted to verbose false
         assert approx_type in ['cg', 'lissa']
         if approx_type == 'lissa':
             return self.get_inverse_hvp_lissa(v, **approx_params)
@@ -600,7 +601,7 @@ class GenericNeuralNet(object):
             x0=np.concatenate(v),
             fprime=fmin_grad_fn,
             fhess_p=self.get_fmin_hvp,
-            callback=cg_callback,
+            #callback=cg_callback,
             avextol=1e-8,
             maxiter=100) 
 

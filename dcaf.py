@@ -26,10 +26,12 @@ from load_spam import load_spam
 from load_mnist import load_small_mnist, load_mnist
 from influence.all_CNN_c import All_CNN_C
 
-
-
 import tensorflow as tf
 import csv
+
+import warnings
+warnings.filterwarnings("ignore", message="numpy.dtype size changed")
+warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
 SEED = 0
 np.random.seed(SEED)
@@ -37,7 +39,8 @@ np.random.seed(SEED)
 class Scenario():
     """
     One Scenario object corresponds to a single counterfactual scenario
-    e.g. we are running spam classification on the enron dataset and training_example #100 does not exist
+    e.g. we are running spam classification on the enron dataset and training example #100 does not exist
+    or we are doing MNIST classification and training exampke #57 does not exist
     """
 
     def __init__(self, task, ex_to_leave_out, num_examples=None):
@@ -140,17 +143,13 @@ def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None
             number of examples to use
     """
     tf.reset_default_graph()
-    # regardless of the choice of tasks, we must do all of the following
-    # 1. load the data set into a tensorflow data objects
-    # 2. choose hyperparameters like learning_rate, iterations, etc
-    # 3. initalize some tensorflow model with these hyperparams
     scenario = Scenario(task, ex_to_leave_out, num_examples)
 
     tf_model = scenario.model
     tf_model.train()
 
     if test_indices is None:
-        test_indices = range(tf_model.data_sets.test.num_examples)
+        test_indices = list(range(tf_model.data_sets.test.num_examples))
 
     # X_train = np.copy(tf_model.data_sets.train.x)
     # Y_train = np.copy(tf_model.data_sets.train.labels)
@@ -159,8 +158,8 @@ def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None
 
     test_to_metrics = {}
 
-    # confusing to readers
-    all_one_preds = []
+    # we might want predictions broken down by test_idx
+    one_at_a_time_preds = []
     for test_idx in test_indices:
         test_feed_dict = tf_model.fill_feed_dict_with_one_ex(
             tf_model.data_sets.test,
@@ -173,7 +172,7 @@ def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None
         test_to_metrics[test_idx] = {
             'loss': loss, 'accuracy': accuracy, 'preds': preds
         }
-        all_one_preds.append(preds[:,1])
+        one_at_a_time_preds.append(preds[:,1])
 
     loss, accuracy, preds = tf_model.sess.run(
         fetches=[tf_model.loss_no_reg, tf_model.accuracy_op, tf_model.preds],
@@ -184,7 +183,7 @@ def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None
     sk_acc = accuracy_score(y_true=Y_test, y_pred=[1 if x[1] >= 0.5 else 0 for x in preds])
     #print('sk_auc', sk_auc)
     assert sk_acc == accuracy
-    assert roc_auc_score(y_true=Y_test, y_score=all_one_preds) == sk_auc
+    assert roc_auc_score(y_true=Y_test, y_score=one_at_a_time_preds) == sk_auc
 
     mean_loss = np.mean([test_to_metrics[x]['loss'] for x in test_to_metrics.keys()])
     assert np.isclose(mean_loss, loss)
@@ -294,7 +293,6 @@ def dcaf(
 
         influence_duration = time.time() - start_time
 
-
         predicted_loss_diffs_per_training_point = sorted(predicted_loss_diffs_per_training_point, key=lambda x: x[0], reverse=True)
         # If the predicted difference in loss is very positive,that means that the point helped it to be correct.
         csvdata = [["index","class","predicted_loss_diff"]]
@@ -313,7 +311,7 @@ def dcaf(
         filepaths.append(filepath)
 
         if num_to_sample_from_train_data is not None:
-            estimated_total_time = influence_duration/num_to_sample_from_train_data * train_size
+            estimated_total_time = influence_duration / num_to_sample_from_train_data * train_size
             print("The estimated total time to run the entire dataset using influence method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time/3600))
 
     if 'leave-one-out' in methods or 'all' in methods:
@@ -386,8 +384,6 @@ def dcaf(
         rmse_val = np.sqrt(np.mean([err ** 2 for err in errs]))
         print('RMSE:', rmse_val)
 
-        print('Average all_at_once_error for influence function:', np.mean())
-        print(np.mean(all_at_once_errors))
         
         if num_to_sample_from_train_data is not None:
             estimated_total_time = loo_duration / num_to_sample_from_train_data * train_size
@@ -492,7 +488,7 @@ def main(args):
         orig_loss = result['loss_no_reg']
         orig_accuracy = result['accuracy']
 
-        test_indices = range(model.data_sets.test.num_examples)
+        test_indices = list(range(model.data_sets.test.num_examples))
         print('Orig loss: %.5f. Accuracy: %.3f' % (orig_loss, orig_accuracy))
         filepaths += dcaf(
             model, task, test_indices=test_indices, orig_loss=orig_loss,
