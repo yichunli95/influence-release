@@ -218,7 +218,6 @@ def dcaf(
         num_examples - how many examples of each class to load. Set a small number to test quickly.
         num_to_sample_from_train_data - how many of the train examples to test.
         per_test - if true, pass in one individual test example to predict at a time
-
     returns:
         the filepath where output data was written as CSV
     """
@@ -281,7 +280,7 @@ def dcaf(
         for train_idx, test_to_method_to_loss in train_to_test_to_method_to_loss.items():
             losses = [x['influence'] for x in test_to_method_to_loss.values()]
             train_to_method_to_avgloss[train_idx]['influence'] = np.mean(losses)
-        
+
 
         all_at_once_errors = []
         for train_idx, loss in predicted_loss_diffs_per_training_point:
@@ -388,7 +387,7 @@ def dcaf(
 
         print('Average all_at_once_error for influence function:', np.mean())
         print(np.mean(all_at_once_errors))
-        
+
         if num_to_sample_from_train_data is not None:
             estimated_total_time = loo_duration / num_to_sample_from_train_data * train_size
             print("The estimated total time to run the entire dataset using leave-one-out method is {} seconds, which is {} hours.".format(
@@ -510,7 +509,6 @@ def main(args):
 def parse():
     """
     Parse CLI Args
-
     Here's an example
     python dcaf.py --method random --num_examples 50 --test
     """
@@ -537,7 +535,6 @@ def parse():
         spam_enron - WIP
         cifar - WIP
         income - WIP
-
         Can be a comma-separated list, e.g. \n
         "--tasks spam,cifar,income"
         """
