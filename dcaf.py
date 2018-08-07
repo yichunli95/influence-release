@@ -277,7 +277,7 @@ def dcaf(
                     train_to_test_to_method_to_loss[train_idx][test_idx]['influence'] = one_test_loss[i]
 
             for train_idx, test_to_method_to_loss in train_to_test_to_method_to_loss.items():
-                losses = [x['influence'] for x in test_to_method_to_loss.values()]
+                losses = [test_idx['influence'] for test_idx, dic in test_to_method_to_loss.items() if test_idx != 'all_at_once']
                 train_to_method_to_avgloss[train_idx]['influence'] = np.mean(losses)
         
 
@@ -289,6 +289,10 @@ def dcaf(
                 #print('loss, per_test_loss', loss, per_test_loss)
                 #print('train_idx, all_at_once_error:', train_idx, all_at_once_error)
             print('rmse of all_at_once_errors:', np.sqrt(np.mean([err ** 2 for err in all_at_once_errors])))
+        else:
+            for train_idx, test_to_method_to_loss in train_to_test_to_method_to_loss.items():
+                losses = [x['influence'] for x in test_to_method_to_loss.values()]
+                train_to_method_to_avgloss[train_idx]['influence'] = test_to_method_to_loss['all_at_once']['influence']
 
         influence_duration = time.time() - start_time
 
@@ -383,8 +387,6 @@ def dcaf(
         rmse_val = np.sqrt(np.mean([err ** 2 for err in errs]))
         print('RMSE:', rmse_val)
 
-        print('Average all_at_once_error for influence function:', np.mean())
-        print(np.mean(all_at_once_errors))
 
         if num_to_sample_from_train_data is not None:
             estimated_total_time = loo_duration / num_to_sample_from_train_data * train_size
