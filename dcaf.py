@@ -149,7 +149,7 @@ def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None
     tf_model.train()
 
     if test_indices is None:
-        test_indices = list(range(tf_model.data_sets.test.num_examples))
+        test_indices = range(tf_model.data_sets.test.num_examples)
 
     # X_train = np.copy(tf_model.data_sets.train.x)
     # Y_train = np.copy(tf_model.data_sets.train.labels)
@@ -204,7 +204,7 @@ def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None
 
 def dcaf(
         model, task, test_indices, orig_loss, methods, num_to_sample_from_train_data=None,
-        num_examples=None, per_test=True,
+        num_examples=None, per_test=None,
     ):
     """
     args:
@@ -256,7 +256,7 @@ def dcaf(
             predicted_loss_diffs_per_training_point[i] = (train_idx, curr_predicted_loss_diff[i])
             train_to_test_to_method_to_loss[train_idx]['all_at_once']['influence'] = curr_predicted_loss_diff[i]
 
-        if per_test:
+        if per_test is not None:
             # could parallelize here?
             # doesn't work: _pickle.PicklingError: Could not pickle the task to send it to the workers.
             # def helper(test_idx, train_sample_indices_indices):
@@ -277,19 +277,19 @@ def dcaf(
                 for i, train_idx in enumerate(train_sample_indices):
                     train_to_test_to_method_to_loss[train_idx][test_idx]['influence'] = one_test_loss[i]
 
-        for train_idx, test_to_method_to_loss in train_to_test_to_method_to_loss.items():
-            losses = [x['influence'] for x in test_to_method_to_loss.values()]
-            train_to_method_to_avgloss[train_idx]['influence'] = np.mean(losses)
+            for train_idx, test_to_method_to_loss in train_to_test_to_method_to_loss.items():
+                losses = [x['influence'] for x in test_to_method_to_loss.values()]
+                train_to_method_to_avgloss[train_idx]['influence'] = np.mean(losses)
         
 
-        all_at_once_errors = []
-        for train_idx, loss in predicted_loss_diffs_per_training_point:
-            per_test_loss = train_to_method_to_avgloss[train_idx]['influence']
-            all_at_once_error = loss - per_test_loss
-            all_at_once_errors.append(all_at_once_error)
-            #print('loss, per_test_loss', loss, per_test_loss)
-            #print('train_idx, all_at_once_error:', train_idx, all_at_once_error)
-        print('rmse of all_at_once_errors:', np.sqrt(np.mean([err ** 2 for err in all_at_once_errors])))
+            all_at_once_errors = []
+            for train_idx, loss in predicted_loss_diffs_per_training_point:
+                per_test_loss = train_to_method_to_avgloss[train_idx]['influence']
+                all_at_once_error = loss - per_test_loss
+                all_at_once_errors.append(all_at_once_error)
+                #print('loss, per_test_loss', loss, per_test_loss)
+                #print('train_idx, all_at_once_error:', train_idx, all_at_once_error)
+            print('rmse of all_at_once_errors:', np.sqrt(np.mean([err ** 2 for err in all_at_once_errors])))
 
         influence_duration = time.time() - start_time
 
@@ -488,12 +488,12 @@ def main(args):
         orig_loss = result['loss_no_reg']
         orig_accuracy = result['accuracy']
 
-        test_indices = list(range(model.data_sets.test.num_examples))
+        test_indices = range(model.data_sets.test.num_examples)
         print('Orig loss: %.5f. Accuracy: %.3f' % (orig_loss, orig_accuracy))
         filepaths += dcaf(
             model, task, test_indices=test_indices, orig_loss=orig_loss,
             methods=args.methods, num_to_sample_from_train_data=args.num_to_sample_from_train_data,
-            num_examples=args.num_examples
+            num_examples=args.num_examples, per_test=args.calc_infl_one_test_at_a_time
         )
     duration = round((time.time() - start_time) / 3600.0, 3)
     msg = 'Done running experiments for methods {}. The DCAF function took {} hours'.format(args.methods, duration)
@@ -513,6 +513,9 @@ def parse():
     parser = argparse.ArgumentParser(description='see docstring')
     parser.add_argument(
         '--methods', help='What methods to use for computing loss. defaults to all', default='influence,leave-one-out'
+    )
+    parser.add_argument(
+        '--calc_infl_one_test_at_a_time', help='Should we calculate influence one test at time or in bulk? Will differ slightly.',
     )
     parser.add_argument(
         '--test', action='store_true', help='When testing, pass this argument to suppress emails.'
