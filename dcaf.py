@@ -182,8 +182,7 @@ def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None
 
     sk_auc = roc_auc_score(y_true=Y_test, y_score=np.array(preds[:,1]))
     sk_acc = accuracy_score(y_true=Y_test, y_pred=[1 if x[1] >= 0.5 else 0 for x in preds])
-    print('results: (loss and tf accuracy)\n', loss, accuracy)
-    print('sk_auc', sk_auc)
+    #print('sk_auc', sk_auc)
     assert sk_acc == accuracy
     assert roc_auc_score(y_true=Y_test, y_score=all_one_preds) == sk_auc
 
@@ -241,6 +240,8 @@ def dcaf(
     if not os.path.isdir('csv_output'):
         os.mkdir('csv_output')
 
+    filepaths = []
+
     train_to_test_to_method_to_loss = defaultdict(lambda: defaultdict(dict))
     train_to_method_to_avgloss = defaultdict(dict)
 
@@ -281,44 +282,42 @@ def dcaf(
             losses = [x['influence'] for x in test_to_method_to_loss.values()]
             train_to_method_to_avgloss[train_idx]['influence'] = np.mean(losses)
         
-        # TODO: quantify error
 
         all_at_once_errors = []
         for train_idx, loss in predicted_loss_diffs_per_training_point:
             per_test_loss = train_to_method_to_avgloss[train_idx]['influence']
             all_at_once_error = loss - per_test_loss
             all_at_once_errors.append(all_at_once_error)
-            print('loss, per_test_loss', loss, per_test_loss)
-            print('train_idx, all_at_once_error:', train_idx, all_at_once_error)
-        print('rmse of all_at_once_errors')
-        print(np.sqrt(np.mean([err ** 2 for err in all_at_once_errors])))
+            #print('loss, per_test_loss', loss, per_test_loss)
+            #print('train_idx, all_at_once_error:', train_idx, all_at_once_error)
+        print('rmse of all_at_once_errors:', np.sqrt(np.mean([err ** 2 for err in all_at_once_errors])))
 
         influence_duration = time.time() - start_time
 
 
         predicted_loss_diffs_per_training_point = sorted(predicted_loss_diffs_per_training_point, key=lambda x: x[0], reverse=True)
-        #print("If the predicted difference in loss is very positive,that means that the point helped it to be correct.")
+        # If the predicted difference in loss is very positive,that means that the point helped it to be correct.
         csvdata = [["index","class","predicted_loss_diff"]]
         for train_idx, loss in predicted_loss_diffs_per_training_point:
             csvdata.append([train_idx, model.data_sets.train.labels[train_idx], loss])
-            print("#{}, label={}, predicted_loss_diff={}".format(
-                train_idx,
-                model.data_sets.train.labels[train_idx],
-                loss
-            ))
+            # print("#{}, label={}, predicted_loss_diff={}".format(
+            #     train_idx,
+            #     model.data_sets.train.labels[train_idx],
+            #     loss
+            # ))
         csv_filename = 'influence_' + str(num_to_sample_from_train_data) + '.csv'
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
+        filepaths.append(filepath)
 
         if num_to_sample_from_train_data is not None:
             estimated_total_time = influence_duration/num_to_sample_from_train_data * train_size
             print("The estimated total time to run the entire dataset using influence method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time/3600))
 
     if 'leave-one-out' in methods or 'all' in methods:
-        print("The credit of each training example is ranked in the form of original loss - current loss.")
-        print("The higher up on the ranking, the example which the leave-one-out approach tests on has a more positive influence on the model.")
+        # The credit of each training example is ranked in the form of current loss - original loss
         start_time = time.time()
         out = Parallel(n_jobs=-1)(
             delayed(run_one_scenario)(
@@ -328,31 +327,23 @@ def dcaf(
         result = []
 
         for curr_results in out:
-            # curr_scenario = curr_results['scenario_obj']
             curr_loss = curr_results['loss_no_reg']
             train_index_to_leave_out = curr_results['ex_to_leave_out']
-            print('The original LOSS is %s' % orig_loss)
-            print('The current LOSS is %s' % curr_loss)
-            print('======================')
             result.append(
                 (train_index_to_leave_out, curr_loss - orig_loss, curr_results['accuracy'])
             )
             for test_idx, metrics in curr_results['test_to_metrics'].items():
                 train_to_test_to_method_to_loss[train_index_to_leave_out][test_idx]['leave-one-out'] =  metrics['loss'] - orig_loss
         loo_duration = time.time() - start_time
-        print('All experiments took {}'.format(loo_duration))
+        print('loo took {}'.format(loo_duration))
 
-
+        # keep this just in case
         # for i, train_idx in enumerate(train_sample_indices):
         #     start1 = time.time()
         #     curr_results = run_one_scenario(task=task, test_indices=test_indices, ex_to_leave_out=i, num_examples=num_examples)
         #     curr_scenario = curr_results['scenario_obj']
         #     curr_loss = curr_results['loss_no_reg']
         #     duration1 = time.time() - start1
-        #     print('The original LOSS is %s' % orig_loss)
-        #     print('The current LOSS is %s' % curr_loss)
-        #     print('The experiment #%s took %s seconds' % (i, duration1))
-        #     print('======================')
         #     result[i] = (train_idx, orig_loss - curr_loss, curr_results['accuracy'])
         #     for test_idx, metrics in curr_results['test_to_metrics'].items():
         #         train_to_test_to_method_to_loss[train_idx][test_idx]['leave-one-out'] =  metrics['loss'] - orig_loss
@@ -362,7 +353,6 @@ def dcaf(
         csvdata = [["index","class","loss_diff","accuracy"]]
         for j in result:
             csvdata.append([j[0], model.data_sets.train.labels[j[0]], j[1], j[2]])
-            print("#%s,class=%s,loss_diff = %.8f, accuracy = %.8f" %(j[0], model.data_sets.train.labels[j[0]],j[1],j[2]))
 
         csv_filename = 'leave_one_out_' + str(num_to_sample_from_train_data) + '.csv'
 
@@ -370,10 +360,9 @@ def dcaf(
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
+        filepaths.append(filepath)
 
         for train_idx, test_to_method_to_loss in train_to_test_to_method_to_loss.items():
-            #print('train_idx', train_idx)
-            #print(test_to_method_to_loss)
             losses = [x['leave-one-out'] for x in test_to_method_to_loss.values() if 'leave-one-out' in x]
             train_to_method_to_avgloss[train_idx]['leave-one-out'] = np.mean(losses)
 
@@ -381,35 +370,34 @@ def dcaf(
 
         errs = []
         for train_idx, method_to_avgloss in train_to_method_to_avgloss.items():
-            print(train_idx)
             err = method_to_avgloss['influence'] - method_to_avgloss['leave-one-out']
-            print('Infl: {}. LOO: {}. Error: {}.'.format(
-                method_to_avgloss['influence'], method_to_avgloss['leave-one-out'],
-                err
-            ))
+            # print(train_idx)
+            # print('Infl: {}. LOO: {}. Error: {}.'.format(
+            #     method_to_avgloss['influence'], method_to_avgloss['leave-one-out'],
+            #     err
+            # ))
             errs.append(err)
 
-        print([x[0] for x in predicted_loss_diffs_per_training_point])
-        print([x[0] for x in result])
-        print('Pearson R')
-        print(pearsonr([x[1] for x in result], [x[1] for x in predicted_loss_diffs_per_training_point]))
+        # checks that the influence predictions and LOO results are sorted in the same manner
+        assert [x[0] for x in predicted_loss_diffs_per_training_point] == [x[0] for x in result]
+        pearson_corr = pearsonr([x[1] for x in result], [x[1] for x in predicted_loss_diffs_per_training_point])
+        print('Pearson R:', pearson_corr)
 
         rmse_val = np.sqrt(np.mean([err ** 2 for err in errs]))
-        print('RMSE')
-        print(rmse_val)
+        print('RMSE:', rmse_val)
 
-        print('Average all_at_once_error for influence function')
+        print('Average all_at_once_error for influence function:', np.mean())
         print(np.mean(all_at_once_errors))
         
         if num_to_sample_from_train_data is not None:
-            estimated_total_time = loo_duration/num_to_sample_from_train_data * train_size
-            print("The estimated total time to run the entire dataset using leave-one-out method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time/3600))
+            estimated_total_time = loo_duration / num_to_sample_from_train_data * train_size
+            print("The estimated total time to run the entire dataset using leave-one-out method is {} seconds, which is {} hours.".format(
+                estimated_total_time, estimated_total_time / 3600))
 
     if 'cosine_similarity' in methods or 'all' in methods:
         start_time = time.time()
         train_sample_array = []
         for train_idx in train_sample_indices:
-            # if model.data_sets.train.labels[train_idx] == 1:
             train_sample_array.append(model.data_sets.train.x[train_idx])
 
         # test_sample_array = []
@@ -426,14 +414,13 @@ def dcaf(
         csvdata = [["index","class","cosine_similarity"]]
         for i in range(len(train_sample_indices)):
             csvdata.append([train_sample_indices[i],model.data_sets.train.labels[train_sample_indices[i]],mean_similarities[i]])
-            print("#{},class={},avg_cosine_similarity={}".format(train_sample_indices[i],model.data_sets.train.labels[train_sample_indices[i]],mean_similarities[i]))
-
         csv_filename = 'cosine_similarity_' + str(num_to_sample_from_train_data) + '.csv'
 
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
+        filepaths.append(filepath)
 
         if num_to_sample_from_train_data is not None:
             estimated_total_time = cos_duration/num_to_sample_from_train_data * train_size
@@ -444,13 +431,13 @@ def dcaf(
         csvdata = [["index","class","credit"]]
         for i in range(len(train_sample_indices)):
             csvdata.append([train_sample_indices[i],model.data_sets.train.labels[train_sample_indices[i]],1/train_size])
-            print("#%s,class=%s,credit = %.8f%%" %(i, model.data_sets.train.labels[train_sample_indices[i]],100/train_size))
         eq_duration = time.time() - start_time
         csv_filename = 'equal_' + str(num_to_sample_from_train_data) + '.csv'
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
+        filepaths.append(filepath)
         if num_to_sample_from_train_data is not None:
             estimated_total_time = eq_duration/num_to_sample_from_train_data * train_size
             print("The estimated total time to run the entire dataset using equal method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time/3600))
@@ -466,7 +453,6 @@ def dcaf(
         csvdata = [["index","class","credit"]]
         for i in result:
             csvdata.append([i[0],model.data_sets.train.labels[i[0]],i[1]])
-            print("#%s,class=%s,credit = %.8f%%" %(i[0], model.data_sets.train.labels[i[0]],i[1]*100.00))
         rand_duration = time.time() - start_time
 
         csv_filename = 'random_' + str(num_to_sample_from_train_data) + '.csv'
@@ -474,6 +460,7 @@ def dcaf(
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(csvdata)
+        filepaths.append(filepath)
 
         if num_to_sample_from_train_data is not None:
             estimated_total_time = rand_duration/num_to_sample_from_train_data * train_size
@@ -507,12 +494,11 @@ def main(args):
 
         test_indices = range(model.data_sets.test.num_examples)
         print('Orig loss: %.5f. Accuracy: %.3f' % (orig_loss, orig_accuracy))
-        filepath = dcaf(
+        filepaths += dcaf(
             model, task, test_indices=test_indices, orig_loss=orig_loss,
             methods=args.methods, num_to_sample_from_train_data=args.num_to_sample_from_train_data,
             num_examples=args.num_examples
         )
-        filepaths.append(filepath)
     duration = round((time.time() - start_time) / 3600.0, 3)
     msg = 'Done running experiments for methods {}. The DCAF function took {} hours'.format(args.methods, duration)
     print(msg)
