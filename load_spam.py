@@ -76,7 +76,10 @@ def process_spam(ex_to_leave_out=None, num_examples=None):
     nlprocessor.learn_vocab(docs_train)
     # Bag of Words matrices for each division of the docs, freqs of each word
     X_train = nlprocessor.get_bag_of_words(docs_train)
-    X_valid = nlprocessor.get_bag_of_words(docs_valid)
+    if docs_valid:
+        X_valid = nlprocessor.get_bag_of_words(docs_valid)
+    else: 
+        X_valid = None
     X_test = nlprocessor.get_bag_of_words(docs_test)
 
     return X_train, Y_train, X_valid, Y_valid, X_test, Y_test
@@ -88,11 +91,15 @@ def load_spam(ex_to_leave_out=None, num_examples=None):
 
     # Convert them to dense matrices
     X_train = X_train.toarray()
-    X_valid = X_valid.toarray()
+    if X_valid is not None:
+        X_valid = X_valid.toarray()
     X_test = X_test.toarray()
 
     train = DataSet(X_train, Y_train)
-    validation = DataSet(X_valid, Y_valid)
+    if X_valid is not None:
+        validation = DataSet(X_valid, Y_valid)
+    else:
+        validation = None
     test = DataSet(X_test, Y_test)
 
     return base.Datasets(train=train, validation=validation, test=test)

@@ -217,17 +217,16 @@ def dcaf(
         num_examples - how many examples of each class to load. Set a small number to test quickly.
         num_to_sample_from_train_data - how many of the train examples to test.
         per_test - if true, pass in one individual test example to predict at a time
-
     returns:
         the filepath where output data was written as CSV
     """
     model.reset_datasets()
     train_size = model.data_sets.train.num_examples
-    valid_size = model.data_sets.validation.num_examples
+    #valid_size = model.data_sets.validation.num_examples
     test_size = model.data_sets.test.num_examples
     print('============================')
     print('The training dataset has %s examples' % train_size)
-    print('The validation dataset has %s examples' % valid_size)
+    #print('The validation dataset has %s examples' % valid_size)
     print('The test dataset has %s examples' % test_size)
     print("The %s methods are chosen." % methods)
     print('============================')
@@ -384,7 +383,9 @@ def dcaf(
         rmse_val = np.sqrt(np.mean([err ** 2 for err in errs]))
         print('RMSE:', rmse_val)
 
-        
+        print('Average all_at_once_error for influence function:', np.mean())
+        print(np.mean(all_at_once_errors))
+
         if num_to_sample_from_train_data is not None:
             estimated_total_time = loo_duration / num_to_sample_from_train_data * train_size
             print("The estimated total time to run the entire dataset using leave-one-out method is {} seconds, which is {} hours.".format(
@@ -393,23 +394,30 @@ def dcaf(
     if 'cosine_similarity' in methods or 'all' in methods:
         start_time = time.time()
         train_sample_array = []
+        #train_sample_same_class_indices =[]
         for train_idx in train_sample_indices:
+        #    if model.data_sets.train.labels[train_idx] == 0:
             train_sample_array.append(model.data_sets.train.x[train_idx])
+        #        train_sample_same_class_indices.append(train_idx)
 
-        # test_sample_array = []
-        # for counter,example in enumerate(model.data_sets.test.x):
-        #     if model.data_sets.test.labels[counter] == 1:
-        #         test_sample_array.append(example)
-        #
-        # similarities = cosine_similarity(train_sample_array, test_sample_array)
+        #test_sample_array = []
+        #for counter,example in enumerate(model.data_sets.test.x):
+        #    if model.data_sets.test.labels[counter] == 0:
+        #        test_sample_array.append(example)
+        
+        #similarities = cosine_similarity(train_sample_array, test_sample_array)
         similarities = cosine_similarity(train_sample_array, model.data_sets.test.x)
         mean_similarities = np.mean(similarities, axis=1)
 
         cos_duration = time.time() - start_time
 
         csvdata = [["index","class","cosine_similarity"]]
+        #for counter,idx in enumerate(train_sample_same_class_indices):
+            #csvdata.append([idx,model.data_sets.train.labels[idx],mean_similarities[counter]])
+        
         for i in range(len(train_sample_indices)):
             csvdata.append([train_sample_indices[i],model.data_sets.train.labels[train_sample_indices[i]],mean_similarities[i]])
+
         csv_filename = 'cosine_similarity_' + str(num_to_sample_from_train_data) + '.csv'
 
         filepath = 'csv_output/{}'.format(csv_filename)
@@ -506,7 +514,6 @@ def main(args):
 def parse():
     """
     Parse CLI Args
-
     Here's an example
     python dcaf.py --method random --num_examples 50 --test
     """
@@ -536,7 +543,6 @@ def parse():
         spam_enron - WIP
         cifar - WIP
         income - WIP
-
         Can be a comma-separated list, e.g. \n
         "--tasks spam,cifar,income"
         """

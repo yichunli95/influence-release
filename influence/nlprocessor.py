@@ -2,6 +2,7 @@ import spacy
 #from spacy.en import English
 
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 import numpy as np
 
 # Note: below line is old version. Using newer spacy, it's easier to use spacy.load(...)
@@ -12,12 +13,13 @@ class NLProcessor(object):
         # self.nlp = English()
         # self.nlp = en_core_web_sm.load()
         self.nlp = spacy.load('en_core_web_sm')
-        self.vectorizer = CountVectorizer(min_df=5)  
+        # self.vectorizer = CountVectorizer(min_df=5)
+        self.vectorizer = TfidfVectorizer(min_df=5)
         self.word_vec_len = 300
-        
+
     def process_spam(self, spam, ham):
         """
-        Takes in a list of spam emails and a list of ham emails 
+        Takes in a list of spam emails and a list of ham emails
         and returns a tuple (docs, Y), where:
         - docs is a list of documents, with each document lemmatized
         and stripped of stop and OOV words.
@@ -33,7 +35,7 @@ class NLProcessor(object):
             #     print(token.lemma_, token.is_alpha, token.is_oov, token.is_stop)
             docs.append(' '.join(
                 [token.lemma_ for token in doc if (token.is_alpha and not (token.is_oov or token.is_stop))]))
-        Y = np.zeros(len(spam) + len(ham))        
+        Y = np.zeros(len(spam) + len(ham))
         Y[:len(spam)] = 1
         Y[len(spam):] = 0
 
@@ -61,16 +63,16 @@ class NLProcessor(object):
                 [token.lemma_ for token in doc if (token.is_alpha and not (token.is_oov or token.is_stop))]))
 
         # Convert target to {+1, -1}. It is originally {+1, 0}.
-        Y = (np.array(newsgroups.target) * 2) - 1    
-        
+        Y = (np.array(newsgroups.target) * 2) - 1
+
         return (docs, Y)
 
     def learn_vocab(self, docs):
         """
         Learns a vocabulary from docs.
-        """    
+        """
         self.vectorizer.fit(docs)
-        
+
     def get_bag_of_words(self, docs):
         """
         Takes in a list of documents and converts it into a bag of words
@@ -79,18 +81,17 @@ class NLProcessor(object):
         """
         X = self.vectorizer.transform(docs)
         return X
-    
+
     def get_mean_word_vector(self, docs):
         """
-        Takes in a list of documents and returns X, a matrix where each row 
+        Takes in a list of documents and returns X, a matrix where each row
         is an example and each column is the mean word vector in that document.
-        """        
+        """
         n = len(docs)
         X = np.empty([n, self.word_vec_len])
         doc_vec = np.zeros(self.word_vec_len)
         for idx, doc in enumerate(docs):
             doc_vec = reduce(lambda x, y: x+y, [token.vector for token in self.nlp(doc)])
-            doc_vec /= n 
+            doc_vec /= n
             X[idx, :] = doc_vec
         return X
-        
