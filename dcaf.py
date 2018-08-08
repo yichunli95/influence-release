@@ -4,7 +4,7 @@ This module can run a variety of experiments that compare different Data Credit 
 import os
 import math
 from collections import defaultdict
-
+from itertools import zip_longest
 
 import numpy as np
 import pandas as pd
@@ -320,11 +320,22 @@ def dcaf(
     if 'leave-one-out' in methods or 'all' in methods:
         # The credit of each training example is ranked in the form of current loss - original loss
         start_time = time.time()
-        out = Parallel(n_jobs=-1)(
-            delayed(run_one_scenario)(
-                task=task, test_indices=test_indices, ex_to_leave_out=train_idx, num_examples=num_examples
-            ) for train_idx in train_sample_indices
-        )
+
+        def grouper(iterable, n, fillvalue=None):
+            "Collect data into fixed-length chunks or blocks"
+            # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
+            args = [iter(iterable)] * n
+            return zip_longest(*args, fillvalue=fillvalue)
+
+        batchsize = 32 # testing on butter suggest going from 34 -> 35 causes on BrokenProcessPool
+        # use 32 to be safe
+        for batch in grouper(train_sample_indices, batchsize):
+            batch = [x for x in batch if x is not None]
+            out = Parallel(n_jobs=-1)(
+                delayed(run_one_scenario)(
+                    task=task, test_indices=test_indices, ex_to_leave_out=train_idx, num_examples=num_examples
+                ) for train_idx in train_sample_indices
+    )
         result = []
 
         for curr_results in out:
