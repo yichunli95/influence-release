@@ -334,8 +334,8 @@ def dcaf(
             out = Parallel(n_jobs=-1)(
                 delayed(run_one_scenario)(
                     task=task, test_indices=test_indices, ex_to_leave_out=train_idx, num_examples=num_examples
-                ) for train_idx in train_sample_indices
-    )
+                ) for train_idx in batch
+            )
         result = []
 
         for curr_results in out:
@@ -484,7 +484,7 @@ def dcaf(
             print("The estimated total time to run the entire dataset using random method is {} seconds, which is {} hours.".format(estimated_total_time, estimated_total_time/3600))
 
 
-    return filepath
+    return filepaths
 
 
 def main(args):
