@@ -182,8 +182,9 @@ def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None
     sk_auc = roc_auc_score(y_true=Y_test, y_score=np.array(preds[:,1]))
     sk_acc = accuracy_score(y_true=Y_test, y_pred=[1 if x[1] >= 0.5 else 0 for x in preds])
     #print('sk_auc', sk_auc)
-    assert sk_acc == accuracy
-    assert roc_auc_score(y_true=Y_test, y_score=one_at_a_time_preds) == sk_auc
+    assert np.isclose(sk_acc, accuracy),'{} != {}'.format(sk_acc, accuracy)
+    one_at_a_time_roc = roc_auc_score(y_true=Y_test, y_score=one_at_a_time_preds)
+    assert np.isclose(one_at_a_time_roc, sk_auc), 'one_at_a_time_auroc ({}) != all_at_once_auroc ({})'.format(one_at_a_time_roc, sk_auc)
 
     mean_loss = np.mean([test_to_metrics[x]['loss'] for x in test_to_metrics.keys()])
     assert np.isclose(mean_loss, loss)
