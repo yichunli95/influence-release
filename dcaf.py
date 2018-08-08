@@ -330,15 +330,17 @@ def dcaf(
         batchsize = 32 # testing on butter suggest going from 34 -> 35 causes on BrokenProcessPool
         # use 32 to be safe
         out = []
-        for batch in grouper(train_sample_indices, batchsize):
-            batch = [x for x in batch if x is not None]
-            out += Parallel(n_jobs=-1)(
-                delayed(run_one_scenario)(
-                    task=task, test_indices=test_indices, ex_to_leave_out=train_idx, num_examples=num_examples
-                ) for train_idx in batch
-            )
-        result = []
+        with Parallel(n_jobs=batchsize) as parallel:
+            for batch in grouper(train_sample_indices, batchsize):
+                batch = [x for x in batch if x is not None]
+                print(batch)
+                out += parallel(
+                    delayed(run_one_scenario)(
+                        task=task, test_indices=test_indices, ex_to_leave_out=train_idx, num_examples=num_examples
+                    ) for train_idx in batch
+                )
 
+        result = []
         for curr_results in out:
             curr_loss = curr_results['loss_no_reg']
             train_index_to_leave_out = curr_results['ex_to_leave_out']

@@ -7,5 +7,7 @@ def grouper(iterable, n, fillvalue=None):
     args = [iter(iterable)] * n
     return zip_longest(*args, fillvalue=fillvalue)
 
-for x in grouper([1, 2, 3, 4, 5], 2):
-    print(x)
+batchsize=32
+for batch in grouper(list(range(0,40)), batchsize):
+    batch = [x for x in batch if x is not None]
+    print(len(batch), batch)
