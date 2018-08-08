@@ -5,6 +5,7 @@ import os
 import math
 from collections import defaultdict
 from itertools import zip_longest
+import json
 
 import numpy as np
 import pandas as pd
@@ -220,20 +221,31 @@ def dcaf(
     returns:
         the filepath where output data was written as CSV
     """
+
+    # TODO: write helpful summary text file after each run
+    summary_dict = {}
     model.reset_datasets()
     train_size = model.data_sets.train.num_examples
-    #valid_size = model.data_sets.validation.num_examples
     test_size = model.data_sets.test.num_examples
-    print('============================')
-    print('The training dataset has %s examples' % train_size)
-    #print('The validation dataset has %s examples' % valid_size)
-    print('The test dataset has %s examples' % test_size)
-    print("The %s methods are chosen." % methods)
-    print('============================')
 
+    summary_dict['num_train'] = train_size
+    summary_dict['num_test'] = test_size
+    summary_dict['methods'] = methods
+    summary_dict['per_test'] = per_test
+
+    prefix = task
     if num_to_sample_from_train_data is not None:
         random.seed(1)
         train_sample_indices = random.sample(range(train_size), num_to_sample_from_train_data)
+        prefix += '_trainingsamples={}'.format(num_to_sample_from_train_data)
+    else:
+        train_sample_indices = list(range(train_size))
+        prefix += '_trainingsamples=all'
+    if num_examples:
+        prefix += '_numexamples={}'.format(num_examples)
+    
+
+    summary_dict['prefix'] = prefix
 
     if not os.path.isdir('csv_output'):
         os.mkdir('csv_output')
@@ -288,25 +300,25 @@ def dcaf(
                 all_at_once_errors.append(all_at_once_error)
                 #print('loss, per_test_loss', loss, per_test_loss)
                 #print('train_idx, all_at_once_error:', train_idx, all_at_once_error)
-            print('rmse of all_at_once_errors:', np.sqrt(np.mean([err ** 2 for err in all_at_once_errors])))
+            rmse_allatonce = np.sqrt(np.mean([err ** 2 for err in all_at_once_errors]))
+            print('rmse of all_at_once_errors:', rmse_allatonce)
+            summary_dict['rmse_allatonce'] = rmse_allatonce
         else:
             for train_idx, test_to_method_to_loss in train_to_test_to_method_to_loss.items():
                 losses = [x['influence'] for x in test_to_method_to_loss.values()]
                 train_to_method_to_avgloss[train_idx]['influence'] = test_to_method_to_loss['all_at_once']['influence']
 
         influence_duration = time.time() - start_time
+        summary_dict['influence_duration'] = influence_duration
 
+        # sort by index to be consistent
         predicted_loss_diffs_per_training_point = sorted(predicted_loss_diffs_per_training_point, key=lambda x: x[0], reverse=True)
         # If the predicted difference in loss is very positive,that means that the point helped it to be correct.
         csvdata = [["index","class","predicted_loss_diff"]]
         for train_idx, loss in predicted_loss_diffs_per_training_point:
             csvdata.append([train_idx, model.data_sets.train.labels[train_idx], loss])
-            # print("#{}, label={}, predicted_loss_diff={}".format(
-            #     train_idx,
-            #     model.data_sets.train.labels[train_idx],
-            #     loss
-            # ))
-        csv_filename = 'influence_' + str(num_to_sample_from_train_data) + '.csv'
+
+        csv_filename = prefix + 'influence_' + str(num_to_sample_from_train_data) + '.csv'
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
@@ -315,6 +327,7 @@ def dcaf(
 
         if num_to_sample_from_train_data is not None:
             estimated_total_time = influence_duration / num_to_sample_from_train_data * train_size
+            summary_dict['estimated_total_influence_duration'] = estimated_total_time
             print("The estimated total time to run the entire dataset using influence method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time/3600))
 
     if 'leave-one-out' in methods or 'all' in methods:
@@ -345,12 +358,13 @@ def dcaf(
             curr_loss = curr_results['loss_no_reg']
             train_index_to_leave_out = curr_results['ex_to_leave_out']
             result.append(
-                (train_index_to_leave_out, curr_loss - orig_loss, curr_results['accuracy'])
+                (train_index_to_leave_out, curr_loss - orig_loss, curr_results['accuracy'], curr_results['auc'])
             )
             for test_idx, metrics in curr_results['test_to_metrics'].items():
                 train_to_test_to_method_to_loss[train_index_to_leave_out][test_idx]['leave-one-out'] =  metrics['loss'] - orig_loss
         loo_duration = time.time() - start_time
         print('loo took {}'.format(loo_duration))
+        summary_dict['loo_duration'] = loo_duration
 
         # keep this just in case
         # for i, train_idx in enumerate(train_sample_indices):
@@ -363,13 +377,13 @@ def dcaf(
         #     for test_idx, metrics in curr_results['test_to_metrics'].items():
         #         train_to_test_to_method_to_loss[train_idx][test_idx]['leave-one-out'] =  metrics['loss'] - orig_loss
 
-        # sorts by index
+        # sort by index to be consistent
         result = sorted(result, key=lambda x: x[0], reverse=True)
         csvdata = [["index","class","loss_diff","accuracy"]]
         for j in result:
             csvdata.append([j[0], model.data_sets.train.labels[j[0]], j[1], j[2]])
 
-        csv_filename = 'leave_one_out_' + str(num_to_sample_from_train_data) + '.csv'
+        csv_filename = prefix + 'leave_one_out_' + str(num_to_sample_from_train_data) + '.csv'
 
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
@@ -381,7 +395,8 @@ def dcaf(
             losses = [x['leave-one-out'] for x in test_to_method_to_loss.values() if 'leave-one-out' in x]
             train_to_method_to_avgloss[train_idx]['leave-one-out'] = np.mean(losses)
 
-        # TODO: save train_to_method_to_avgloss to json or csv
+        with open(prefix + '_train_to_method_to_avgloss.json', 'w') as f:
+            json.dump(train_to_method_to_avgloss, f)
 
         errs = []
         for train_idx, method_to_avgloss in train_to_method_to_avgloss.items():
@@ -396,14 +411,17 @@ def dcaf(
         # checks that the influence predictions and LOO results are sorted in the same manner
         assert [x[0] for x in predicted_loss_diffs_per_training_point] == [x[0] for x in result]
         pearson_corr = pearsonr([x[1] for x in result], [x[1] for x in predicted_loss_diffs_per_training_point])
+        summary_dict['pearson_corr'] = pearson_corr
         print('Pearson R:', pearson_corr)
 
         rmse_val = np.sqrt(np.mean([err ** 2 for err in errs]))
+        summary_dict['rmse_influence'] = rmse_val
         print('RMSE:', rmse_val)
 
 
         if num_to_sample_from_train_data is not None:
             estimated_total_time = loo_duration / num_to_sample_from_train_data * train_size
+            summary_dict['estimated_total_loo_duration'] = estimated_total_time
             print("The estimated total time to run the entire dataset using leave-one-out method is {} seconds, which is {} hours.".format(
                 estimated_total_time, estimated_total_time / 3600))
 
@@ -426,6 +444,7 @@ def dcaf(
         mean_similarities = np.mean(similarities, axis=1)
 
         cos_duration = time.time() - start_time
+        summary_dict['cosine_duration'] = cos_duration
 
         csvdata = [["index","class","cosine_similarity"]]
         #for counter,idx in enumerate(train_sample_same_class_indices):
@@ -434,7 +453,7 @@ def dcaf(
         for i in range(len(train_sample_indices)):
             csvdata.append([train_sample_indices[i],model.data_sets.train.labels[train_sample_indices[i]],mean_similarities[i]])
 
-        csv_filename = 'cosine_similarity_' + str(num_to_sample_from_train_data) + '.csv'
+        csv_filename = prefix + 'cosine_similarity_' + str(num_to_sample_from_train_data) + '.csv'
 
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
@@ -444,7 +463,8 @@ def dcaf(
 
         if num_to_sample_from_train_data is not None:
             estimated_total_time = cos_duration/num_to_sample_from_train_data * train_size
-            print("The estimated total time to run the entire dataset using cosine similarity method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time/3600))
+            summary_dict['estimated_total_cosine_duration'] = estimated_total_time
+            print("The estimated total time to run the entire dataset using cosine similarity method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time / 3600))
 
     if 'equal' in methods or 'all' in methods:
         start_time = time.time()
@@ -452,7 +472,8 @@ def dcaf(
         for i in range(len(train_sample_indices)):
             csvdata.append([train_sample_indices[i],model.data_sets.train.labels[train_sample_indices[i]],1/train_size])
         eq_duration = time.time() - start_time
-        csv_filename = 'equal_' + str(num_to_sample_from_train_data) + '.csv'
+        summary_dict['equal_duration'] = eq_duration
+        csv_filename = prefix + 'equal_' + str(num_to_sample_from_train_data) + '.csv'
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
@@ -460,7 +481,8 @@ def dcaf(
         filepaths.append(filepath)
         if num_to_sample_from_train_data is not None:
             estimated_total_time = eq_duration/num_to_sample_from_train_data * train_size
-            print("The estimated total time to run the entire dataset using equal method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time/3600))
+            summary_dict['estimated_total_equal_duration'] = estimated_total_time
+            print("The estimated total time to run the entire dataset using equal method is {} seconds, which is {} hours.".format(estimated_total_time,estimated_total_time / 3600))
 
     if 'random' in methods or 'all' in methods:
         start_time = time.time()
@@ -474,8 +496,9 @@ def dcaf(
         for i in result:
             csvdata.append([i[0],model.data_sets.train.labels[i[0]],i[1]])
         rand_duration = time.time() - start_time
+        summary_dict['random_duration'] = rand_duration
 
-        csv_filename = 'random_' + str(num_to_sample_from_train_data) + '.csv'
+        csv_filename = prefix + 'random_' + str(num_to_sample_from_train_data) + '.csv'
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
@@ -484,7 +507,12 @@ def dcaf(
 
         if num_to_sample_from_train_data is not None:
             estimated_total_time = rand_duration/num_to_sample_from_train_data * train_size
-            print("The estimated total time to run the entire dataset using random method is {} seconds, which is {} hours.".format(estimated_total_time, estimated_total_time/3600))
+            summary_dict['estimated_total_random_duration'] = estimated_total_time
+            print("The estimated total time to run the entire dataset using random method is {} seconds, which is {} hours.".format(
+                estimated_total_time, estimated_total_time / 3600))
+
+    with open(prefix + '_summary.json', 'w') as f:
+        json.dump(summary_dict, f)
 
 
     return filepaths
