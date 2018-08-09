@@ -23,6 +23,9 @@ from joblib import Parallel, delayed
 import influence.experiments as experiments
 from influence.nlprocessor import NLProcessor
 from influence.binaryLogisticRegressionWithLBFGS import BinaryLogisticRegressionWithLBFGS
+from influence.logisticRegressionWithLBFGS import LogisticRegressionWithLBFGS
+from influence.smooth_hinge import SmoothHinge
+
 from load_spam import load_spam
 from load_mnist import load_small_mnist, load_mnist
 from influence.all_CNN_c import All_CNN_C
@@ -30,27 +33,25 @@ from influence.all_CNN_c import All_CNN_C
 import tensorflow as tf
 import csv
 
-import warnings
-warnings.filterwarnings("ignore", message="numpy.dtype size changed")
-warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
-
 SEED = 0
 np.random.seed(SEED)
 
 class Scenario():
     """
     One Scenario object corresponds to a single counterfactual scenario
-    e.g. we are running spam classification on the enron dataset and training example #100 does not exist
-    or we are doing MNIST classification and training exampke #57 does not exist
+    e.g. we are running spam classification using Logistic Regression on the enron dataset and training example #100 does not exist
+    or we are doing MNIST classification using CNN and training exampke #57 does not exist
     """
 
-    def __init__(self, task, ex_to_leave_out, num_examples=None):
+    def __init__(self, task, model_name, ex_to_leave_out, num_examples=None, data_dir='data'):
         """
         init a Scenario objects.
         """
         self.task = task
+        self.model_name = model_name
         self.ex_to_leave_out = ex_to_leave_out
         self.num_examples = num_examples
+        self.data_dir = data_dir
         self.datasets = self.load_data_sets()
         self.init_model()
         self.name = "{}__missing_{}__trunc_to_{}__seed_{}".format(
@@ -61,20 +62,27 @@ class Scenario():
     def load_data_sets(self):
         if self.task == 'spam_enron':
             self.data_sets = load_spam(ex_to_leave_out=self.ex_to_leave_out, num_examples=self.num_examples)
+        elif self.task == 'small_mnist':
+            self.data_sets = load_small_mnist(self.data_dir)
         elif self.task == 'mnist':
-            self.data_sets = load_small_mnist('data')
+            self.data_sets = load_mnist(self.data_dir)
 
 
     def init_model(self):
         """
-        Initialize a tf model based on task
+        Initialize a tf model based on model_name and datasets
         """
 
-        if self.task == 'spam_enron':
-            num_classes = 2
+        # TODO: make it easier to use non-default hyperparams?
+
+        # we can always infer # classes of from the training data
+        num_classes = len(set(self.data_sets.train.labels))
+        print('Num classes', num_classes)
+        if self.model_name == 'binary_logistic':
+            #num_classes = 2
+            assert num_classes == 2
             input_dim = self.data_sets.train.x.shape[1]
             weight_decay = 0.0001
-            # weight_decay = 1000 / len(lr_data_sets.train.labels)
             batch_size = 100
             initial_learning_rate = 0.001
             keep_probs = None
@@ -96,8 +104,34 @@ class Scenario():
                 log_dir='log',
                 model_name='spam_logreg'
             )
-        elif self.task == 'mnist':
-            num_classes = 10
+        elif self.model_name == 'multi_logistic':
+            #num_classes = 10
+            input_dim = self.data_sets.train.x.shape[1]
+            weight_decay = 0.01
+            batch_size = 1400
+            initial_learning_rate = 0.001 
+            keep_probs = None
+            max_lbfgs_iter = 1000
+            decay_epochs = [1000, 10000]
+
+
+            self.model = LogisticRegressionWithLBFGS(
+                input_dim=input_dim,
+                weight_decay=weight_decay,
+                max_lbfgs_iter=max_lbfgs_iter,
+                num_classes=num_classes, 
+                batch_size=batch_size,
+                data_sets=self.data_sets,
+                initial_learning_rate=initial_learning_rate,
+                keep_probs=keep_probs,
+                decay_epochs=decay_epochs,
+                mini_batch=False,
+                train_dir='output',
+                log_dir='log',
+                model_name='mnist_logreg_lbfgs')
+
+        elif self.model_name == 'cnn':
+            #num_classes = 10
             input_side = 28
             input_channels = 1
             input_dim = input_side * input_side * input_channels
@@ -131,10 +165,47 @@ class Scenario():
                 log_dir='log',
                 model_name='mnist_small_all_cnn_c'
             )
+        elif self.model_name == 'hinge_svm':
+            num_classes = 2
+            input_side = 28
+            input_channels = 1
+            input_dim = input_side * input_side * input_channels
+            weight_decay = 0.01
+            use_bias = False
+            batch_size = 100
+            initial_learning_rate = 0.001 
+            keep_probs = None
+            decay_epochs = [1000, 10000]
+            max_lbfgs_iter = 1000
+
+            temps = [0, 0.001, 0.1]
+            num_temps = len(temps)
+
+            num_params = 784
+
+            temp = 0
+            self.model = SmoothHinge(
+                use_bias=use_bias,
+                temp=temp,
+                input_dim=input_dim,
+                weight_decay=weight_decay,
+                num_classes=num_classes,
+                batch_size=batch_size,
+                data_sets=self.data_sets,
+                initial_learning_rate=initial_learning_rate,
+                keep_probs=keep_probs,
+                decay_epochs=decay_epochs,
+                mini_batch=False,
+                train_dir='output',
+                log_dir='log',
+                model_name='smooth_hinge_17_t-%s' % temp)
+            
 
 
 
-def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None, return_model=False):
+def run_one_scenario(
+         task, model_name, test_indices, ex_to_leave_out=None, num_examples=None, return_model=False, data_dir='data'
+    ):
     """
     args:
         ex_to_leave_out - integer
@@ -144,10 +215,10 @@ def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None
             number of examples to use
     """
     tf.reset_default_graph()
-    scenario = Scenario(task, ex_to_leave_out, num_examples)
+    scenario = Scenario(task, model_name, ex_to_leave_out, num_examples, data_dir)
 
     tf_model = scenario.model
-    tf_model.train()
+    tf_model.train(verbose=False)
 
     if test_indices is None:
         test_indices = range(tf_model.data_sets.test.num_examples)
@@ -205,8 +276,8 @@ def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None
 
 
 def dcaf(
-        model, task, test_indices, orig_loss, methods, num_to_sample_from_train_data=None,
-        num_examples=None, per_test=None,
+        model, model_name, task, test_indices, orig_loss, methods, num_to_sample_from_train_data=None,
+        num_examples=None, per_test=None, data_dir='data'
     ):
     """
     args:
@@ -223,12 +294,13 @@ def dcaf(
         the filepath where output data was written as CSV
     """
 
-    # TODO: write helpful summary text file after each run
     summary_dict = {}
     model.reset_datasets()
     train_size = model.data_sets.train.num_examples
     test_size = model.data_sets.test.num_examples
 
+    summary_dict['model_name'] = model_name
+    summary_dict['task'] = task
     summary_dict['num_train'] = train_size
     summary_dict['num_test'] = test_size
     summary_dict['methods'] = methods
@@ -266,7 +338,7 @@ def dcaf(
         )
         for i, train_idx in enumerate(train_sample_indices):
             predicted_loss_diffs_per_training_point[i] = (train_idx, curr_predicted_loss_diff[i])
-            train_to_test_to_method_to_loss[train_idx]['all_at_once']['influence'] = curr_predicted_loss_diff[i]
+            train_to_test_to_method_to_loss[train_idx]['all_at_once']['influence'] = float(curr_predicted_loss_diff[i]) # so we can print to json...
 
         if per_test is not None:
             # could parallelize here?
@@ -287,7 +359,7 @@ def dcaf(
                     test_indices=[test_idx], train_indices=train_sample_indices, force_refresh=True
                 )
                 for i, train_idx in enumerate(train_sample_indices):
-                    train_to_test_to_method_to_loss[train_idx][test_idx]['influence'] = one_test_loss[i]
+                    train_to_test_to_method_to_loss[train_idx][test_idx]['influence'] = float(one_test_loss[i]) # so we can print to json
 
             for train_idx, test_to_method_to_loss in train_to_test_to_method_to_loss.items():
                 losses = [test_idx['influence'] for test_idx, dic in test_to_method_to_loss.items() if test_idx != 'all_at_once']
@@ -350,7 +422,8 @@ def dcaf(
                 print(batch)
                 out += parallel(
                     delayed(run_one_scenario)(
-                        task=task, test_indices=test_indices, ex_to_leave_out=train_idx, num_examples=num_examples
+                        task=task, model_name=model_name, test_indices=test_indices,
+                        ex_to_leave_out=train_idx, num_examples=num_examples, data_dir=data_dir
                     ) for train_idx in batch
                 )
 
@@ -362,7 +435,7 @@ def dcaf(
                 (train_index_to_leave_out, curr_loss - orig_loss, curr_results['accuracy'], curr_results['auc'])
             )
             for test_idx, metrics in curr_results['test_to_metrics'].items():
-                train_to_test_to_method_to_loss[train_index_to_leave_out][test_idx]['leave-one-out'] =  metrics['loss'] - orig_loss
+                train_to_test_to_method_to_loss[train_index_to_leave_out][test_idx]['leave-one-out'] =  float(metrics['loss'] - orig_loss)
         loo_duration = time.time() - start_time
         print('loo took {}'.format(loo_duration))
         summary_dict['loo_duration'] = loo_duration
@@ -396,8 +469,8 @@ def dcaf(
             losses = [x['leave-one-out'] for x in test_to_method_to_loss.values() if 'leave-one-out' in x]
             train_to_method_to_avgloss[train_idx]['leave-one-out'] = np.mean(losses)
 
-        with open(prefix + '_train_to_method_to_avgloss.json', 'w') as f:
-            json.dump(train_to_method_to_avgloss, f)
+        with open(prefix + '_train_to_method_to_loss.json', 'w') as f:
+            json.dump(train_to_test_to_method_to_loss, f)
 
         errs = []
         for train_idx, method_to_avgloss in train_to_method_to_avgloss.items():
@@ -536,7 +609,7 @@ def main(args):
     filepaths = []
 
     for task in args.tasks:
-        result = run_one_scenario(task, test_indices=None, num_examples=args.num_examples, return_model=True)
+        result = run_one_scenario(task, args.model_name, test_indices=None, num_examples=args.num_examples, return_model=True, data_dir=args.data_dir)
         model = result['tf_model']
         orig_loss = result['loss_no_reg']
         orig_accuracy = result['accuracy']
@@ -544,9 +617,9 @@ def main(args):
         test_indices = range(model.data_sets.test.num_examples)
         print('Orig loss: %.5f. Accuracy: %.3f' % (orig_loss, orig_accuracy))
         filepaths += dcaf(
-            model, task, test_indices=test_indices, orig_loss=orig_loss,
+            model, args.model_name, task, test_indices=test_indices, orig_loss=orig_loss,
             methods=args.methods, num_to_sample_from_train_data=args.num_to_sample_from_train_data,
-            num_examples=args.num_examples, per_test=args.calc_infl_one_test_at_a_time
+            num_examples=args.num_examples, per_test=args.calc_infl_one_test_at_a_time, data_dir=args.data_dir
         )
     duration = round((time.time() - start_time) / 3600.0, 3)
     msg = 'Done running experiments for methods {}. The DCAF function took {} hours'.format(args.methods, duration)
@@ -590,6 +663,17 @@ def parse():
         income - WIP
         Can be a comma-separated list, e.g. \n
         "--tasks spam,cifar,income"
+        """
+    )
+    parser.add_argument(
+        '--model_name', default='binary_logistic', help="""
+        Which model to test. Currently supports:\n
+        binary_logistic (working)
+        multi_logistic (needs some work)
+        CNN (needs some work)
+        Hinge SVM
+
+        See code for model details, like how many layers in the net, learning rate, etc
         """
     )
     parser.add_argument(
