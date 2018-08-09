@@ -25,6 +25,7 @@ from influence.nlprocessor import NLProcessor
 from influence.binaryLogisticRegressionWithLBFGS import BinaryLogisticRegressionWithLBFGS
 from load_spam import load_spam
 from load_mnist import load_small_mnist, load_mnist
+from load_heart_disease import load_heart_disease
 from influence.all_CNN_c import All_CNN_C
 
 import tensorflow as tf
@@ -63,6 +64,8 @@ class Scenario():
             self.data_sets = load_spam(ex_to_leave_out=self.ex_to_leave_out, num_examples=self.num_examples)
         elif self.task == 'mnist':
             self.data_sets = load_small_mnist('data')
+        elif self.task == 'heart_disease':
+            self.data_sets = load_heart_disease(ex_to_leave_out=self.ex_to_leave_out, num_examples=self.num_examples)
 
 
     def init_model(self):
@@ -131,7 +134,32 @@ class Scenario():
                 log_dir='log',
                 model_name='mnist_small_all_cnn_c'
             )
+        elif self.task == 'heart_disease':
+            num_classes = 2
+            input_dim = self.data_sets.train.x.shape[1]
+            weight_decay = 0.0001
+            # weight_decay = 1000 / len(lr_data_sets.train.labels)
+            batch_size = 10
+            initial_learning_rate = 0.001
+            keep_probs = None
+            decay_epochs = [1000, 10000]
+            max_lbfgs_iter = 1000
 
+            self.model = BinaryLogisticRegressionWithLBFGS(
+                input_dim=input_dim,
+                weight_decay=weight_decay,
+                max_lbfgs_iter=max_lbfgs_iter,
+                num_classes=num_classes,
+                batch_size=batch_size,
+                data_sets=self.data_sets,
+                initial_learning_rate=initial_learning_rate,
+                keep_probs=keep_probs,
+                decay_epochs=decay_epochs,
+                mini_batch=False,
+                train_dir='output',
+                log_dir='log',
+                model_name='spam_logreg'
+            )
 
 
 def run_one_scenario(task, test_indices, ex_to_leave_out=None, num_examples=None, return_model=False):
@@ -319,7 +347,7 @@ def dcaf(
         for train_idx, loss in predicted_loss_diffs_per_training_point:
             csvdata.append([train_idx, model.data_sets.train.labels[train_idx], loss])
 
-        csv_filename = prefix + 'influence_' + str(num_to_sample_from_train_data) + '.csv'
+        csv_filename = prefix + 'influence_' + str(num_to_sample_from_train_data) + '_' + str(task) + '.csv'
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
@@ -364,7 +392,7 @@ def dcaf(
             for test_idx, metrics in curr_results['test_to_metrics'].items():
                 train_to_test_to_method_to_loss[train_index_to_leave_out][test_idx]['leave-one-out'] =  metrics['loss'] - orig_loss
         loo_duration = time.time() - start_time
-        print('loo took {}'.format(loo_duration))
+        print('loo took {} seconds'.format(loo_duration))
         summary_dict['loo_duration'] = loo_duration
 
         # keep this just in case
@@ -384,7 +412,7 @@ def dcaf(
         for j in result:
             csvdata.append([j[0], model.data_sets.train.labels[j[0]], j[1], j[2]])
 
-        csv_filename = prefix + 'leave_one_out_' + str(num_to_sample_from_train_data) + '.csv'
+        csv_filename = prefix + 'leave_one_out_' + str(num_to_sample_from_train_data) + '_' + str(task) + '.csv'
 
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
@@ -454,7 +482,7 @@ def dcaf(
         for i in range(len(train_sample_indices)):
             csvdata.append([train_sample_indices[i],model.data_sets.train.labels[train_sample_indices[i]],mean_similarities[i]])
 
-        csv_filename = prefix + 'cosine_similarity_' + str(num_to_sample_from_train_data) + '.csv'
+        csv_filename = prefix + 'cosine_similarity_' + str(num_to_sample_from_train_data) + '_' + str(task) + '.csv'
 
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
@@ -474,7 +502,7 @@ def dcaf(
             csvdata.append([train_sample_indices[i],model.data_sets.train.labels[train_sample_indices[i]],1/train_size])
         eq_duration = time.time() - start_time
         summary_dict['equal_duration'] = eq_duration
-        csv_filename = prefix + 'equal_' + str(num_to_sample_from_train_data) + '.csv'
+        csv_filename = prefix + 'equal_' + str(num_to_sample_from_train_data) + '_' + str(task) + '.csv'
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
@@ -499,7 +527,7 @@ def dcaf(
         rand_duration = time.time() - start_time
         summary_dict['random_duration'] = rand_duration
 
-        csv_filename = prefix + 'random_' + str(num_to_sample_from_train_data) + '.csv'
+        csv_filename = prefix + 'random_' + str(num_to_sample_from_train_data) + '_' + str(task) + '.csv'
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)

@@ -1,0 +1,1 @@
+{"num_train": 16, "num_test": 4, "methods": ["cosine_similarity"], "per_test": null, "prefix": "spam_enron_trainingsamples=10_numexamples=10", "cosine_duration": 0.0006680488586425781, "estimated_total_cosine_duration": 0.001068878173828125}

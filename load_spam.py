@@ -101,5 +101,5 @@ def load_spam(ex_to_leave_out=None, num_examples=None):
     else:
         validation = None
     test = DataSet(X_test, Y_test)
-
+    #print(X_train[1])
     return base.Datasets(train=train, validation=validation, test=test)

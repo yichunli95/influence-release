@@ -1,0 +1,1 @@
+{"num_train": 16, "num_test": 4, "methods": ["cosine_similarity"], "per_test": null, "prefix": "heart_disease_trainingsamples=10_numexamples=10", "cosine_duration": 0.004820108413696289, "estimated_total_cosine_duration": 0.007712173461914063}

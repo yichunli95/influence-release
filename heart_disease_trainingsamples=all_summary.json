@@ -1,0 +1,1 @@
+{"num_train": 242, "num_test": 61, "methods": ["influence"], "per_test": null, "prefix": "heart_disease_trainingsamples=all", "influence_duration": 0.6612598896026611}
