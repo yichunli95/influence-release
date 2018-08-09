@@ -1,0 +1,1 @@
+{"model_name": "binary_logistic", "task": "income", "num_train": 1600, "num_test": 400, "methods": ["influence"], "per_test": null, "prefix": "income_trainingsamples=100_numexamples=1000", "influence_duration": 1.9690229892730713, "estimated_total_influence_duration": 31.50436782836914}
