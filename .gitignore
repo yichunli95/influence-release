@@ -3,4 +3,5 @@ __pycache__
 influence/__pycache__
 output
 csv_output
+data/
 .idea
