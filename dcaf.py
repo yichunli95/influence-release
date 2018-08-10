@@ -29,6 +29,7 @@ from influence.smooth_hinge import SmoothHinge
 from load_spam import load_spam
 from load_mnist import load_small_mnist, load_mnist
 from load_heart_disease import load_heart_disease
+from load_income import load_income
 from influence.all_CNN_c import All_CNN_C
 
 import tensorflow as tf
@@ -69,6 +70,8 @@ class Scenario():
             self.data_sets = load_small_mnist('data')
         elif self.task == 'heart_disease':
             self.data_sets = load_heart_disease(ex_to_leave_out=self.ex_to_leave_out, num_examples=self.num_examples)
+        elif self.task == 'income':
+            self.data_sets = load_income(ex_to_leave_out=self.ex_to_leave_out, num_examples=self.num_examples)
 
         if 'mnist' in self.task:
             self.input_side = 28
@@ -77,6 +80,7 @@ class Scenario():
         else:
             self.input_dim = self.data_sets.train.x.shape[1]
 
+        
 
     def init_model(self):
         """
@@ -169,6 +173,32 @@ class Scenario():
                 train_dir='output',
                 log_dir='log',
                 model_name=model_name
+            )
+        elif self.task == 'income':
+            num_classes = 2
+            input_dim = self.data_sets.train.x.shape[1]
+            weight_decay = 0.0001
+            # weight_decay = 1000 / len(lr_data_sets.train.labels)
+            batch_size = 10
+            initial_learning_rate = 0.001
+            keep_probs = None
+            decay_epochs = [1000, 10000]
+            max_lbfgs_iter = 1000
+
+            self.model = BinaryLogisticRegressionWithLBFGS(
+                input_dim=input_dim,
+                weight_decay=weight_decay,
+                max_lbfgs_iter=max_lbfgs_iter,
+                num_classes=num_classes,
+                batch_size=batch_size,
+                data_sets=self.data_sets,
+                initial_learning_rate=initial_learning_rate,
+                keep_probs=keep_probs,
+                decay_epochs=decay_epochs,
+                mini_batch=False,
+                train_dir='output',
+                log_dir='log',
+                model_name='income_logreg'
             )
         elif self.model_name == 'hinge_svm':
             #num_classes = 2
