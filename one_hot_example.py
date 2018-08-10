@@ -1,6 +1,4 @@
 import pandas as pd
-from sklearn_pandas import DataFrameMapper
-from sklearn.preprocessing import OneHotEncoder
 
 df = pd.read_csv('fake_data.csv')
 print(df)

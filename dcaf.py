@@ -70,6 +70,13 @@ class Scenario():
         elif self.task == 'heart_disease':
             self.data_sets = load_heart_disease(ex_to_leave_out=self.ex_to_leave_out, num_examples=self.num_examples)
 
+        if 'mnist' in self.task:
+            self.input_side = 28
+            self.input_channels = 1
+            self.input_dim = self.input_side * self.input_side * self.input_channels 
+        else:
+            self.input_dim = self.data_sets.train.x.shape[1]
+
 
     def init_model(self):
         """
@@ -80,11 +87,11 @@ class Scenario():
 
         # we can always infer # classes of from the training data
         num_classes = len(set(self.data_sets.train.labels))
+        model_name = self.task + '_' + self.model_name
         print('Num classes', num_classes)
         if self.model_name == 'binary_logistic':
             #num_classes = 2
             assert num_classes == 2
-            input_dim = self.data_sets.train.x.shape[1]
             weight_decay = 0.0001
             batch_size = 100
             initial_learning_rate = 0.001
@@ -93,7 +100,7 @@ class Scenario():
             max_lbfgs_iter = 1000
 
             self.model = BinaryLogisticRegressionWithLBFGS(
-                input_dim=input_dim,
+                input_dim=self.input_dim,
                 weight_decay=weight_decay,
                 max_lbfgs_iter=max_lbfgs_iter,
                 num_classes=num_classes,
@@ -105,11 +112,10 @@ class Scenario():
                 mini_batch=False,
                 train_dir='output',
                 log_dir='log',
-                model_name='spam_logreg'
+                model_name=model_name
             )
         elif self.model_name == 'multi_logistic':
             #num_classes = 10
-            input_dim = self.data_sets.train.x.shape[1]
             weight_decay = 0.01
             batch_size = 1400
             initial_learning_rate = 0.001 
@@ -117,9 +123,8 @@ class Scenario():
             max_lbfgs_iter = 1000
             decay_epochs = [1000, 10000]
 
-
             self.model = LogisticRegressionWithLBFGS(
-                input_dim=input_dim,
+                input_dim=self.input_dim,
                 weight_decay=weight_decay,
                 max_lbfgs_iter=max_lbfgs_iter,
                 num_classes=num_classes, 
@@ -131,13 +136,10 @@ class Scenario():
                 mini_batch=False,
                 train_dir='output',
                 log_dir='log',
-                model_name='mnist_logreg_lbfgs')
+                model_name=model_name)
 
         elif self.model_name == 'cnn':
-            #num_classes = 10
-            input_side = 28
-            input_channels = 1
-            input_dim = input_side * input_side * input_channels
+            assert num_classes == 10
             weight_decay = 0.001
             batch_size = 500
 
@@ -150,8 +152,8 @@ class Scenario():
             keep_probs = [1.0, 1.0]
 
             self.model = All_CNN_C(
-                input_side=input_side,
-                input_channels=input_channels,
+                input_side=self.input_side,
+                input_channels=self.input_channels,
                 conv_patch_size=conv_patch_size,
                 hidden1_units=hidden1_units,
                 hidden2_units=hidden2_units,
@@ -166,62 +168,17 @@ class Scenario():
                 mini_batch=True,
                 train_dir='output',
                 log_dir='log',
-                model_name='mnist_small_all_cnn_c'
-            )
-        elif self.task == 'heart_disease':
-            num_classes = 2
-            input_dim = self.data_sets.train.x.shape[1]
-            weight_decay = 0.0001
-            # weight_decay = 1000 / len(lr_data_sets.train.labels)
-            batch_size = 10
-            initial_learning_rate = 0.001
-            keep_probs = None
-            decay_epochs = [1000, 10000]
-            max_lbfgs_iter = 1000
-            
-            self.model = BinaryLogisticRegressionWithLBFGS(
-                input_dim=input_dim,
-                weight_decay=weight_decay,
-                max_lbfgs_iter=max_lbfgs_iter,
-                num_classes=num_classes,
-                batch_size=batch_size,
-                data_sets=self.data_sets,
-                initial_learning_rate=initial_learning_rate,
-                keep_probs=keep_probs,
-                decay_epochs=decay_epochs,
-                mini_batch=False,
-                train_dir='output',
-                log_dir='log',
-                model_name='spam_logreg'
+                model_name=model_name
             )
         elif self.model_name == 'hinge_svm':
-            num_classes = 2
-            input_side = 28
-            input_channels = 1
-            input_dim = input_side * input_side * input_channels
+            #num_classes = 2
             weight_decay = 0.01
             use_bias = False
             batch_size = 100
             initial_learning_rate = 0.001 
             keep_probs = None
             decay_epochs = [1000, 10000]
-            max_lbfgs_iter = 1000
 
-            self.model = BinaryLogisticRegressionWithLBFGS(
-                input_dim=input_dim,
-                weight_decay=weight_decay,
-                max_lbfgs_iter=max_lbfgs_iter,
-                num_classes=num_classes,
-                batch_size=batch_size,
-                data_sets=self.data_sets,
-                initial_learning_rate=initial_learning_rate,
-                keep_probs=keep_probs,
-                decay_epochs=decay_epochs,
-                mini_batch=False,
-                train_dir='output',
-                log_dir='log',
-                model_name='spam_logreg'
-            )
             temps = [0, 0.001, 0.1]
             num_temps = len(temps)
 
@@ -231,7 +188,7 @@ class Scenario():
             self.model = SmoothHinge(
                 use_bias=use_bias,
                 temp=temp,
-                input_dim=input_dim,
+                input_dim=self.input_dim,
                 weight_decay=weight_decay,
                 num_classes=num_classes,
                 batch_size=batch_size,
@@ -243,7 +200,6 @@ class Scenario():
                 train_dir='output',
                 log_dir='log',
                 model_name='smooth_hinge_17_t-%s' % temp)
-            
 
 
 
@@ -267,9 +223,6 @@ def run_one_scenario(
     if test_indices is None:
         test_indices = range(tf_model.data_sets.test.num_examples)
 
-    # X_train = np.copy(tf_model.data_sets.train.x)
-    # Y_train = np.copy(tf_model.data_sets.train.labels)
-    # X_test = np.copy(tf_model.data_sets.test.x)
     Y_test = np.copy(tf_model.data_sets.test.labels)
 
     test_to_metrics = {}
@@ -288,18 +241,30 @@ def run_one_scenario(
         test_to_metrics[test_idx] = {
             'loss': loss, 'accuracy': accuracy, 'preds': preds
         }
-        one_at_a_time_preds.append(preds[:,1])
+            
+        if model_name == 'hinge_svm':
+            one_at_a_time_preds.append(preds)
+        else:
+            one_at_a_time_preds.append(preds[:,1])
 
     loss, accuracy, preds = tf_model.sess.run(
         fetches=[tf_model.loss_no_reg, tf_model.accuracy_op, tf_model.preds],
         feed_dict=tf_model.all_test_feed_dict
     )
-
-    sk_auc = roc_auc_score(y_true=Y_test, y_score=np.array(preds[:,1]))
-    sk_acc = accuracy_score(y_true=Y_test, y_pred=[1 if x[1] >= 0.5 else 0 for x in preds])
-    #print('sk_auc', sk_auc)
+    # right now, this is hard coded for a 2-class problem where preds has a probablity for each class
+    # so it doesn't work for SVM (the current implementation has 1 label in preds)
+    if model_name == 'hinge_svm':        
+        y_pred = [1 if x >= 0.5 else 0 for x in preds]
+        # currently, we're not computing AUROC for SVM
+        sk_auc = 0
+        one_at_a_time_roc = 0
+    else:
+        y_pred = [1 if x[1] >= 0.5 else 0 for x in preds]
+        sk_auc = roc_auc_score(y_true=Y_test, y_score=np.array(preds[:,1]))
+        one_at_a_time_roc = roc_auc_score(y_true=Y_test, y_score=one_at_a_time_preds)
+    
+    sk_acc = accuracy_score(y_true=Y_test, y_pred=y_pred)
     assert np.isclose(sk_acc, accuracy),'{} != {}'.format(sk_acc, accuracy)
-    one_at_a_time_roc = roc_auc_score(y_true=Y_test, y_score=one_at_a_time_preds)
     assert np.isclose(one_at_a_time_roc, sk_auc), 'one_at_a_time_auroc ({}) != all_at_once_auroc ({})'.format(one_at_a_time_roc, sk_auc)
 
     mean_loss = np.mean([test_to_metrics[x]['loss'] for x in test_to_metrics.keys()])
@@ -350,7 +315,7 @@ def dcaf(
     summary_dict['methods'] = methods
     summary_dict['per_test'] = per_test
 
-    prefix = task
+    prefix = 'task={}_modelname={}_'.format(task, model_name)
     if num_to_sample_from_train_data is not None:
         random.seed(1)
         train_sample_indices = random.sample(range(train_size), num_to_sample_from_train_data)
@@ -360,7 +325,7 @@ def dcaf(
         prefix += '_trainingsamples=all'
     if num_examples:
         prefix += '_numexamples={}'.format(num_examples)
-    
+    prefix += '_'
 
     summary_dict['prefix'] = prefix
 
@@ -435,7 +400,7 @@ def dcaf(
         for train_idx, loss in predicted_loss_diffs_per_training_point:
             csvdata.append([train_idx, model.data_sets.train.labels[train_idx], loss])
 
-        csv_filename = prefix + 'influence_' + str(num_to_sample_from_train_data) + '_' + str(task) + '.csv'
+        csv_filename = prefix + 'influence.csv'
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
@@ -501,7 +466,7 @@ def dcaf(
         for j in result:
             csvdata.append([j[0], model.data_sets.train.labels[j[0]], j[1], j[2]])
 
-        csv_filename = prefix + 'leave_one_out_' + str(num_to_sample_from_train_data) + '_' + str(task) + '.csv'
+        csv_filename = prefix + 'leave_one_out.csv'
 
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
@@ -513,17 +478,12 @@ def dcaf(
             losses = [x['leave-one-out'] for x in test_to_method_to_loss.values() if 'leave-one-out' in x]
             train_to_method_to_avgloss[train_idx]['leave-one-out'] = np.mean(losses)
 
-        with open(prefix + '_train_to_method_to_loss.json', 'w') as f:
+        with open('csv_output/' + prefix + 'train_to_method_to_loss.json', 'w') as f:
             json.dump(train_to_test_to_method_to_loss, f)
 
         errs = []
         for train_idx, method_to_avgloss in train_to_method_to_avgloss.items():
             err = method_to_avgloss['influence'] - method_to_avgloss['leave-one-out']
-            # print(train_idx)
-            # print('Infl: {}. LOO: {}. Error: {}.'.format(
-            #     method_to_avgloss['influence'], method_to_avgloss['leave-one-out'],
-            #     err
-            # ))
             errs.append(err)
 
         # checks that the influence predictions and LOO results are sorted in the same manner
@@ -571,7 +531,7 @@ def dcaf(
         for i in range(len(train_sample_indices)):
             csvdata.append([train_sample_indices[i],model.data_sets.train.labels[train_sample_indices[i]],mean_similarities[i]])
 
-        csv_filename = prefix + 'cosine_similarity_' + str(num_to_sample_from_train_data) + '_' + str(task) + '.csv'
+        csv_filename = prefix + 'cosine_similarity.csv'
 
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
@@ -591,7 +551,7 @@ def dcaf(
             csvdata.append([train_sample_indices[i],model.data_sets.train.labels[train_sample_indices[i]],1/train_size])
         eq_duration = time.time() - start_time
         summary_dict['equal_duration'] = eq_duration
-        csv_filename = prefix + 'equal_' + str(num_to_sample_from_train_data) + '_' + str(task) + '.csv'
+        csv_filename = prefix + 'equal.csv'
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
@@ -616,7 +576,7 @@ def dcaf(
         rand_duration = time.time() - start_time
         summary_dict['random_duration'] = rand_duration
 
-        csv_filename = prefix + 'random_' + str(num_to_sample_from_train_data) + '_' + str(task) + '.csv'
+        csv_filename = prefix + 'random.csv'
         filepath = 'csv_output/{}'.format(csv_filename)
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
@@ -629,7 +589,7 @@ def dcaf(
             print("The estimated total time to run the entire dataset using random method is {} seconds, which is {} hours.".format(
                 estimated_total_time, estimated_total_time / 3600))
 
-    with open(prefix + '_summary.json', 'w') as f:
+    with open('csv_output/' + prefix + 'summary.json', 'w') as f:
         json.dump(summary_dict, f)
 
 

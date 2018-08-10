@@ -194,11 +194,11 @@ class SmoothHinge(GenericNeuralNet):
         return fmin_hvp
 
 
-    def train(self):
+    def train(self, verbose=True):
         if self.temp == 0:
-            self.train_with_svm(self.all_train_feed_dict)
+            self.train_with_svm(self.all_train_feed_dict, verbose=verbose)
         else:
-            self.train_with_fmin(self.all_train_feed_dict)
+            self.train_with_fmin(self.all_train_feed_dict, verbose=verbose)
             
     def train_with_fmin(self, train_feed_dict, save_checkpoints=True, verbose=True):
         fmin_loss_fn = self.get_train_fmin_loss_fn(train_feed_dict)
@@ -295,7 +295,9 @@ class SmoothHinge(GenericNeuralNet):
     
 
     def predictions(self, logits):
+        print(logits)
         preds = tf.sign(logits, name='preds')
+        print(preds)
         return preds
  
 
@@ -336,12 +338,12 @@ class SmoothHinge(GenericNeuralNet):
           A scalar int32 tensor with the number of examples (out of batch_size)
           that were predicted correctly.
         """        
-        preds = tf.sign(tf.reshape(logits, [-1]))
+        preds = tf.cast(tf.greater(tf.reshape(logits, [-1]), 0), tf.int32)
         correct = tf.reduce_sum(
             tf.cast(
                 tf.equal(
                     preds, 
-                    tf.cast(labels, tf.float32)),
+                    tf.cast(labels, tf.int32)),
                 tf.int32))
         return correct / tf.shape(labels)[0]
 

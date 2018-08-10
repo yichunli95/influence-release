@@ -642,7 +642,7 @@ class GenericNeuralNet(object):
         return test_grad_loss_no_reg_val
 
 
-    def get_influence_on_test_loss(self, test_indices, train_idx, 
+    def get_influence_on_test_loss(self, test_indices, train_indices, 
         approx_type='cg', approx_params=None, force_refresh=True, test_description=None,
         loss_type='normal_loss',
         X=None, Y=None):
@@ -650,11 +650,11 @@ class GenericNeuralNet(object):
         # Need to make sure test_idx stays consistent between models
         # because mini-batching permutes dataset order
 
-        if train_idx is None: 
+        if train_indices is None: 
             if (X is None) or (Y is None): raise ValueError('X and Y must be specified if using phantom points.')
             if X.shape[0] != len(Y): raise ValueError('X and Y must have the same length.')
         else:
-            if (X is not None) or (Y is not None): raise ValueError('X and Y cannot be specified if train_idx is specified.')
+            if (X is not None) or (Y is not None): raise ValueError('X and Y cannot be specified if train_indices is specified.')
 
         test_grad_loss_no_reg_val = self.get_test_grad_loss_no_reg_val(test_indices, loss_type=loss_type)
 
@@ -683,7 +683,7 @@ class GenericNeuralNet(object):
 
 
         start_time = time.time()
-        if train_idx is None:
+        if train_indices is None:
             num_to_remove = len(Y)
             predicted_loss_diffs = np.zeros([num_to_remove])            
             for counter in np.arange(num_to_remove):
@@ -692,9 +692,9 @@ class GenericNeuralNet(object):
                 predicted_loss_diffs[counter] = np.dot(np.concatenate(inverse_hvp), np.concatenate(train_grad_loss_val)) / self.num_train_examples            
 
         else:            
-            num_to_remove = len(train_idx)
+            num_to_remove = len(train_indices)
             predicted_loss_diffs = np.zeros([num_to_remove])
-            for counter, idx_to_remove in enumerate(train_idx):            
+            for counter, idx_to_remove in enumerate(train_indices):            
                 single_train_feed_dict = self.fill_feed_dict_with_one_ex(self.data_sets.train, idx_to_remove)      
                 train_grad_loss_val = self.sess.run(self.grad_total_loss_op, feed_dict=single_train_feed_dict)
                 predicted_loss_diffs[counter] = np.dot(np.concatenate(inverse_hvp), np.concatenate(train_grad_loss_val)) / self.num_train_examples
